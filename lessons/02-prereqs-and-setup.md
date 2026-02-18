@@ -59,7 +59,7 @@ If you cloned from GitHub:
 
 ```bash
 git clone <YOUR-LAB-2-REPO-URL>
-cd Training-Module-Production-Grade-RAG-Infrastructure-Weviate
+cd Training-Module-Production-Grade-RAG-Infrastructure-Qdrant
 ```
 
 Confirm you’re in the correct folder:
