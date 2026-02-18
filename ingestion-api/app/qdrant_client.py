@@ -3,11 +3,12 @@ import uuid
 import httpx
 from typing import Dict, Any, List
 
+from .embeddings import embed_texts as local_embed_texts
+
 QDRANT_URL = os.getenv("QDRANT_URL", "http://qdrant:6333").rstrip("/")
 QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "LabDoc")
 
-# Embeddings service base URL (TEI)
-EMBEDDINGS_BASE_URL = os.getenv("EMBEDDINGS_BASE_URL", "http://text-embeddings:80").rstrip("/")
+# Vector dimension must match the embedding model
 EMBEDDINGS_DIM = int(os.getenv("EMBEDDINGS_DIM", "384"))
 
 async def ready() -> bool:
@@ -27,14 +28,8 @@ async def ensure_collection() -> None:
         cr.raise_for_status()
 
 async def embed_texts(texts: List[str]) -> List[List[float]]:
-    """Call TEI /embed endpoint: {"inputs":[...]} -> [[...vector...], ...]"""
-    async with httpx.AsyncClient(timeout=180.0) as client:
-        r = await client.post(f"{EMBEDDINGS_BASE_URL}/embed", json={"inputs": texts})
-        r.raise_for_status()
-        data = r.json()
-        if not isinstance(data, list):
-            raise ValueError("Unexpected embeddings response shape")
-        return data
+    """Local embeddings (no external TEI container)."""
+    return local_embed_texts(texts)
 
 async def insert_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
     """Embed + upsert one doc as a single Qdrant point."""
