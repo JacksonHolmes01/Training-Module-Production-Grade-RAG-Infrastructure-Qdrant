@@ -145,4 +145,4 @@ That function checks the same header.
 - `/health` returns 200 with the correct header.
 - You can explain why having both NGINX auth and API auth is stronger than only one.
 
-[Lesson 5](https://github.com/JacksonHolmes01/Training-Module-Production-Grade-RAG-Infrastructure-Qdrant/blob/main/lessons/05-qdrant-schema-and-vectorization.md)
+[Lesson 5](https://github.com/JacksonHolmes01/Training-Module-Production-Grade-RAG-Infrastructure-Qdrant/blob/main/lessons/05-weaviate-schema-and-vectorization.md))
