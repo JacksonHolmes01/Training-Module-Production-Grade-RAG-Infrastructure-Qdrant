@@ -19,6 +19,7 @@ services:
 
   text-embeddings:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9
+    platform: linux/amd64 
     container_name: text-embeddings
     restart: unless-stopped
     mem_limit: 2g
