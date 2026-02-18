@@ -1,23 +1,16 @@
-# Lesson 1 — Lab 2 Overview: From Secure DB to a Real RAG App
+# Lesson 1 — Lab 1 Overview: From Secure DB to a Real RAG App
 
 ## Learning objectives
 
 By the end of this lesson, you will be able to:
 
-- Explain what changes from **Lab 1** (secure single-node Qdrant) to **Lab 2** (multi-service RAG system).
-- Name each service in the Lab 2 architecture and describe its job in **one sentence**.
+- Name each service in the Lab architecture and describe its job in **one sentence**.
 - Describe the end-to-end **RAG flow**: *ingest → embed → store → retrieve → generate → show citations*.
 - Identify what is **exposed to your laptop** vs what is **internal-only** (and why that matters for security).
 
 ---
 
-## Why Lab 2 exists (in plain language)
-
-In **Lab 1**, you deployed Qdrant securely and validated the basics: authentication, RBAC, lifecycle operations, backups, start/stop commands, etc.
-
-That’s the foundation, but in the real world, Qdrant is usually not “the product.” It is an internal part of a bigger application.
-
-In **Lab 2**, we build something that feels like a real application:
+In this lab, we build something that feels like a real application:
 
 - You can open a UI in your browser.
 - You can ingest a small dataset.
@@ -107,7 +100,7 @@ RAG tries to make answers **verifiable** by attaching sources.
 
 ## How you will know you succeeded (end-of-lab success criteria)
 
-At the end of Lab 2, you should be able to:
+At the end of this Lab, you should be able to:
 
 - Start the stack with `docker compose up -d --build`
 - Load the UI at `http://localhost:7860`
