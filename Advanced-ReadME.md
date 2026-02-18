@@ -118,18 +118,6 @@ docker compose up -d --build
 
 ---
 
-## If You Still Have Lab 1 Running
-
-If Lab 1 is still running, go into the Lab 1 folder and stop it:
-
-```bash
-cd <lab1-folder>
-docker compose down
-```
-
-Then return to Lab 2 and start it again.
-
----
 
 ## Why This Happens
 
