@@ -12,10 +12,10 @@ services:
     networks:
       - internal
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:6333/healthz"]
-      interval: 10s
-      timeout: 5s
-      retries: 20
+  test: ["CMD-SHELL", "timeout 2 sh -c '</dev/tcp/127.0.0.1/6333'"]
+  interval: 10s
+  timeout: 5s
+  retries: 30
 
   text-embeddings:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9
