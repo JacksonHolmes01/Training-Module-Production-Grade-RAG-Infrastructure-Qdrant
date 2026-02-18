@@ -2,7 +2,7 @@ version: "2.4"
 
 services:
   qdrant:
-    image: semitechnologies/qdrant:1.25.7
+    image: qdrant/qdrant:latest
     container_name: qdrant
     restart: unless-stopped
     mem_limit: 8g
