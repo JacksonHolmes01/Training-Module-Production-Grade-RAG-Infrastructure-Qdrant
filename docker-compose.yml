@@ -12,10 +12,10 @@ services:
     networks:
       - internal
     healthcheck:
-  test: ["CMD-SHELL", "timeout 2 sh -c '</dev/tcp/127.0.0.1/6333'"]
-  interval: 10s
-  timeout: 5s
-  retries: 30
+      test: ["CMD-SHELL", "timeout 2 sh -c '</dev/tcp/127.0.0.1/6333'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
 
   text-embeddings:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9
