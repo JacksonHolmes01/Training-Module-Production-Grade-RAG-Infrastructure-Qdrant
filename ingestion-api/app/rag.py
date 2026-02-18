@@ -27,7 +27,7 @@ async def retrieve_sources(query: str, k: Optional[int] = None) -> List[Dict[str
     k = k or RAG_TOP_K
 
     # 1) embed query
-    qvec = (await embed_texts([query]))[0]
+    qvec = embed_texts([query])[0]
 
     # 2) search qdrant
     payload = {
