@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.responses import PlainTextResponse
 
 from .schemas import ArticleIn, ChatIn
-from .qdrant_client import ready, ensure_schema, insert_doc
+from .qdrant_client import ready, ensure_collection, insert_doc
 from .rag import retrieve_sources, build_prompt, ollama_generate
 
 
@@ -98,8 +98,8 @@ async def ingest(article: ArticleIn, request: Request):
     rid = getattr(request.state, "request_id", str(uuid.uuid4()))
 
     try:
-        # Only ingestion needs schema creation; chat does not.
-        await asyncio.wait_for(ensure_schema(), timeout=15)
+        # Only ingestion needs collection creation; chat does not.
+        await asyncio.wait_for(ensure_collection(), timeout=15)
 
         # Ensure JSON-safe primitives
         doc = article.model_dump(mode="json")
@@ -243,6 +243,11 @@ async def debug_ollama(payload: ChatIn, request: Request):
     try:
         # Keep it simple: send the message directly (no sources)
         answer = await asyncio.wait_for(ollama_generate(payload.message), timeout=OLLAMA_TIMEOUT_S)
-        return {"ok": True, "ollama_base_url": os.getenv("OLLAMA_BASE_URL", ""), "ollama_model": os.getenv("OLLAMA_MODEL", ""), "answer": answer}
+        return {
+            "ok": True,
+            "ollama_base_url": os.getenv("OLLAMA_BASE_URL", ""),
+            "ollama_model": os.getenv("OLLAMA_MODEL", ""),
+            "answer": answer,
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
