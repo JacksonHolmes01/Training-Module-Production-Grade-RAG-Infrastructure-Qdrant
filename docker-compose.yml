@@ -16,6 +16,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 30
+      
   ollama:
     image: ollama/ollama:latest
     container_name: ollama
@@ -39,14 +40,11 @@ services:
       OLLAMA_MODEL: "${OLLAMA_MODEL}"
       QDRANT_URL: "http://qdrant:6333"
       QDRANT_COLLECTION: "${QDRANT_COLLECTION}"
-      EMBEDDINGS_BASE_URL: "http://text-embeddings:80"
       EMBEDDINGS_MODEL_ID: "${EMBEDDINGS_MODEL_ID}"
       EMBEDDINGS_DIM: "${EMBEDDINGS_DIM}"
     depends_on:
       qdrant:
-        condition: service_healthy
-      text-embeddings:
-        condition: service_healthy
+        condition: service_started
       ollama:
         condition: service_started
     networks:
