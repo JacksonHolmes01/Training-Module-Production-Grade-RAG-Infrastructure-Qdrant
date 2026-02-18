@@ -1,9 +1,7 @@
-# Lab 2 — Production-Grade RAG Infrastructure
+# Lab 1 — Production-Grade RAG Infrastructure
 
-This repository is **Lab 2** in a two-part sequence.
 
-- **[Lab 1](https://github.com/JacksonHolmes01/Training-Module-Securely-Install-Configure-And-Test-Qdrant)** Secure single-node Qdrant fundamentals 
-- **Lab 2 (this repository):** Build a multi-service Retrieval-Augmented Generation (RAG) chatbot using Qdrant, Ollama, FastAPI, NGINX, and Gradio.
+- **Lab 1 (this repository):** Build a multi-service Retrieval-Augmented Generation (RAG) chatbot using Qdrant, Ollama, FastAPI, NGINX, and Gradio.
 
 You will not just run a chatbot, you will understand how it is built, secured, and operated.
 
