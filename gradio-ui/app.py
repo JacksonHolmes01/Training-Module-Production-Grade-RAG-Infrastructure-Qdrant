@@ -7,7 +7,16 @@ API_BASE_URL = os.getenv("API_BASE_URL", "http://edge-nginx:8088").rstrip("/")
 EDGE_API_KEY = os.getenv("EDGE_API_KEY", "")
 
 # Long timeout because first LLM call can be slow (model load, cold start)
-HTTP_TIMEOUT_S = float(os.getenv("GRADIO_HTTP_TIMEOUT_S", "300"))
+HTTP_TIMEOUT_S = float(os.getenv("GRADIO_HTTP_TIMEOUT_S", "600"))
+
+def _timeout_s(default: float = 600.0) -> float:
+    raw = (os.getenv("GRADIO_HTTP_TIMEOUT_S") or "").strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
 
 def call_api(path: str, payload: dict):
     if not EDGE_API_KEY:
@@ -15,10 +24,7 @@ def call_api(path: str, payload: dict):
 
     headers = {"X-API-Key": EDGE_API_KEY}
 
-    # LLM calls can be slow (cold start, model load). Make it configurable.
-    timeout_s = float(os.getenv("GRADIO_HTTP_TIMEOUT_S", "600"))
-    timeout = httpx.Timeout(timeout_s, connect=30.0)
-
+    timeout = httpx.Timeout(_timeout_s(), connect=30.0)
     with httpx.Client(timeout=timeout) as client:
         r = client.post(f"{API_BASE_URL}{path}", json=payload, headers=headers)
         r.raise_for_status()
