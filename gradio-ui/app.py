@@ -1,6 +1,6 @@
 import os
 import httpx
-import httpx
+import gradio as gr
 import os
 
 API_BASE_URL = os.getenv("API_BASE_URL", "http://edge-nginx:8088").rstrip("/")
