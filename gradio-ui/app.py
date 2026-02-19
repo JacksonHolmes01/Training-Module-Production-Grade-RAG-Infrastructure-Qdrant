@@ -1,15 +1,19 @@
 import os
 import httpx
-import gradio as gr
+import httpx
+import os
 
-API_BASE_URL = os.getenv("API_BASE_URL", "http://nginx:8088")
+API_BASE_URL = os.getenv("API_BASE_URL", "http://edge-nginx:8088").rstrip("/")
 EDGE_API_KEY = os.getenv("EDGE_API_KEY", "")
 
+# Long timeout because first LLM call can be slow (model load, cold start)
+HTTP_TIMEOUT_S = float(os.getenv("GRADIO_HTTP_TIMEOUT_S", "300"))
+
 def call_api(path: str, payload: dict):
-    if not EDGE_API_KEY:
-        return {"error": "EDGE_API_KEY is not set for the UI container."}
     headers = {"X-API-Key": EDGE_API_KEY}
-    with httpx.Client(timeout=120) as client:
+    timeout = httpx.Timeout(HTTP_TIMEOUT_S, connect=30.0)
+
+    with httpx.Client(timeout=timeout) as client:
         r = client.post(f"{API_BASE_URL}{path}", json=payload, headers=headers)
         r.raise_for_status()
         return r.json()
