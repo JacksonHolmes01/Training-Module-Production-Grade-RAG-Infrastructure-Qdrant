@@ -192,3 +192,5 @@ Full wipe (deletes Qdrant data + Ollama models):
 ## Checkpoints 
 - You can explain the dependency chain (UI → proxy → API → Qdrant/Ollama).
 - You can reset the lab and explain exactly what was deleted.
+
+[Conclusion](https://github.com/JacksonHolmes01/Training-Module-Production-Grade-RAG-Infrastructure-Qdrant/blob/main/lessons/10-Conclusion.md)
