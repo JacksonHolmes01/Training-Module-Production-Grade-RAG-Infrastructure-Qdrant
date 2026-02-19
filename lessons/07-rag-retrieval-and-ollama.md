@@ -88,6 +88,16 @@ docker exec -it ollama ollama rm llama3.1:8b
 ```
 
 ---
+Then test generation directly:
+
+```bash
+curl -sS -X POST "http://localhost:8088/debug/ollama" \
+  -H "X-API-Key: $EDGE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Explain the CIA triad in 2 sentences."}'
+```
+
+If this returns quickly, your model is correctly configured.
 
 ### If Generation Is Slow
 
@@ -100,16 +110,6 @@ If `/chat` takes more than ~60–120 seconds on a laptop:
 docker compose restart ollama
 ```
 
-- Then test generation directly:
-
-```bash
-curl -sS -X POST "http://localhost:8088/debug/ollama" \
-  -H "X-API-Key: $EDGE_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"message":"Explain the CIA triad in 2 sentences."}'
-```
-
-If this returns quickly, your model is correctly configured.
 
 ## Step 2 — Understand the RAG pipeline in this repo
 
@@ -214,7 +214,7 @@ The client (curl or Gradio UI) displays the result.
 
 ---
 
-## Step 3 — Debug retrieval first (no LLM)
+## Step 3 — Debug retrieval first (no LLM) (If No Errors Skip Step)
 
 RAG has two major phases:
 
@@ -337,7 +337,7 @@ Inside the JSON response:
 
 Carefully inspect the `"prompt"` field.
 
-You should see:
+You should see (or something similar):
 
 ### 4.1. Clear Instruction Block
 
@@ -357,7 +357,7 @@ User question:
 Why is it risky to expose a vector database directly to the internet?
 ```
 
-If this is missing, your prompt builder is broken.
+If this or something similar is missing, your prompt builder is broken.
 
 ## How to Fix It (If your prompt builder is not broken skip this step)
 
