@@ -85,7 +85,7 @@ services:
     environment:
       API_BASE_URL: "http://edge-nginx:8088"
       EDGE_API_KEY: "${EDGE_API_KEY}"
-      GRADIO_HTTP_TIMEOUT_S: "${GRADIO_HTTP_TIMEOUT_S}"
+      GRADIO_HTTP_TIMEOUT_S: "600"
     depends_on:
       nginx:
         condition: service_started
