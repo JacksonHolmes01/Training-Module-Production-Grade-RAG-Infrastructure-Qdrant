@@ -35,6 +35,7 @@ CHAT_TOTAL_TIMEOUT_S = float(os.getenv("CHAT_TOTAL_TIMEOUT_S", "180"))
 # App + counters
 # -----------------------------
 app = FastAPI(title="Lab 2 Ingestion + RAG API")
+app.include_router(memory_router)
 
 START = time.time()
 INGEST_COUNT = 0
