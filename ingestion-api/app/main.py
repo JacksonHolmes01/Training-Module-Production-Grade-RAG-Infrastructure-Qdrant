@@ -3,6 +3,7 @@ import time
 import uuid
 import asyncio
 import logging
+from app.security_memory.router import router as memory_router
 
 from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.responses import PlainTextResponse
