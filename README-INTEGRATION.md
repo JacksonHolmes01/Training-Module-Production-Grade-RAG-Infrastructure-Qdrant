@@ -1,79 +1,159 @@
-# Qdrant Lab — Expanded VSCode Implementation Pack (Ultra)
+# Expanded VSCode Implementation --- Security Memory Integration for the Qdrant RAG Lab
 
-This pack adds a **3-lesson segment** to your Qdrant RAG lab that teaches students how to build and use a **security reference memory** for grounded security analysis.
+## Purpose
 
-## What you get
-- 3 detailed lessons (Markdown)
-- Sample mini corpus so the lab runs immediately
-- Prompt library for IDE-based security review
-- Production-ready FastAPI endpoints: `/memory/health`, `/memory/query`
-- A container-mode ingestion command (`python -m app.security_memory.ingest`)
-- Patches for the Gradio UI (robust timeout parsing + correct imports)
+This segment extends the Production-Grade RAG Infrastructure (Qdrant)
+lab by adding a **Security AI Memory layer** that allows students to
+perform grounded, standards-based security analysis directly within
+their development workflow.
 
-## Where to copy files in your repo
-Copy these folders into your repo root:
+The goal is not to build another chatbot.
 
-- `lessons/04-security-memory/`
-- `security-memory/`
-- `patches/` (optional, used to apply code changes)
+The goal is to:
 
-## Required integration steps (summary)
-1) Copy FastAPI package:
-   - from `patches/ingestion-api/app/security_memory/`
-   - to `ingestion-api/app/security_memory/`
+-   Embed authoritative cybersecurity frameworks into a local vector
+    database (Qdrant)
+-   Expose that memory through secure FastAPI endpoints
+-   Use it as a retrieval tool inside an IDE (VS Code / Cursor /
+    Windsurf)
+-   Enable grounded code reviews and configuration analysis using:
+    -   NIST CSF
+    -   CIS Controls
+    -   MITRE ATT&CK
+    -   MITRE CAPEC
+    -   OWASP Top 10
+    -   Secure container and API practices
 
-2) Wire router into `ingestion-api/app/main.py`:
-```python
-from app.security_memory.router import router as memory_router
-app.include_router(memory_router)
-```
+This transforms the lab from "RAG demo" into a **security-aware
+development environment**.
 
-3) Add env keys to `.env.example`:
-```bash
-SECURITY_COLLECTION=ExpandedVSCodeMemory
-SECURITY_TOP_K=6
-SECURITY_CHUNK_CHARS=1200
-SECURITY_CHUNK_OVERLAP=200
-```
+------------------------------------------------------------------------
 
-4) Rebuild ingestion API:
-```bash
+# What This Implementation Adds
+
+This integration introduces:
+
+### 1. A Dedicated Security Memory Collection
+
+A separate Qdrant collection (e.g., `ExpandedVSCodeMemory`) that stores:
+
+-   Vector embeddings of security framework content
+-   Structured metadata (title, source, tags, doc_path, chunk index)
+-   Clean, chunked markdown/text documents
+
+This ensures: - Retrieval is scoped and auditable - Lab demo documents
+remain separate from security corpus - Memory can scale independently
+
+------------------------------------------------------------------------
+
+### 2. A Secure FastAPI Retrieval Tool
+
+New endpoints:
+
+-   `GET /memory/health`
+-   `POST /memory/query`
+
+These endpoints:
+
+-   Enforce API key authentication via NGINX
+-   Embed the user's query
+-   Search Qdrant
+-   Return relevant security chunks
+-   Support optional tag filtering (`cis`, `nist`, `mitre`, `owasp`,
+    etc.)
+
+This enables IDE tooling and structured security review workflows.
+
+------------------------------------------------------------------------
+
+### 3. A Structured Dataset Layout
+
+Security content must live in:
+
+security-memory/ data/ cis/ mitre_attack/ mitre_capec/ nist/ owasp/
+
+All files must be: - `.md` or `.txt` - Cleanly formatted (not raw
+JSON) - Human-readable and logically structured
+
+If your downloaded datasets are JSON: - Convert them to markdown before
+ingestion - Extract meaningful fields (name, description, mitigation,
+etc.) - Avoid ingesting raw STIX relationship objects
+
+Feel free to add datasets related to cybersecurity to improve your chatbot!
+
+------------------------------------------------------------------------
+
+### 4. Three Structured Lessons
+
+## Lesson 1 --- Building Security Memory
+
+Students will:
+
+-   Understand vector memory architecture
+-   Organize a curated security corpus
+-   Configure chunk size and overlap
+-   Ingest documents into Qdrant
+-   Validate collection health and retrieval results
+
+------------------------------------------------------------------------
+
+## Lesson 2 --- Exposing Memory as a Secure Tool
+
+Students will:
+
+-   Add `security_memory` module to FastAPI
+-   Wire the router into `main.py`
+-   Rebuild the ingestion API container
+-   Validate `/memory/health` and `/memory/query`
+
+------------------------------------------------------------------------
+
+## Lesson 3 --- IDE Security Review Workflow
+
+Students will:
+
+-   Retrieve security context using `/memory/query`
+-   Use retrieved references inside VS Code prompts
+-   Perform grounded review of Dockerfiles, docker-compose, NGINX
+    configs, and API authentication logic
+-   Propose minimal diffs that preserve lab functionality
+
+------------------------------------------------------------------------
+
+# Activation Steps
+
+4)  Rebuild ingestion API:
+
+``` bash
 docker compose up -d --build ingestion-api
 ```
 
-5) Ingest memory corpus:
-```bash
+5)  Ingest memory corpus:
+
+``` bash
 docker exec -i ingestion-api python -m app.security_memory.ingest
 ```
 
-6) Test:
-```bash
+6)  Test:
+
+``` bash
 EDGE_API_KEY=$(grep -E '^EDGE_API_KEY=' .env | cut -d= -f2-)
 curl -sS -H "X-API-Key: $EDGE_API_KEY" http://localhost:8088/memory/health | python -m json.tool
-curl -sS -X POST http://localhost:8088/memory/query \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: $EDGE_API_KEY" \
-  -d '{"query":"OWASP A01 broken access control", "tags":["owasp"], "top_k":5}' \
-  | python -m json.tool
+curl -sS -X POST http://localhost:8088/memory/query   -H "Content-Type: application/json"   -H "X-API-Key: $EDGE_API_KEY"   -d '{"query":"OWASP A01 broken access control", "tags":["owasp"], "top_k":5}'   | python -m json.tool
 ```
+
+------------------------------------------------------------------------
 
 ## Optional Gradio UI fix (recommended)
-If your UI crashed with:
-- `ValueError: could not convert string to float: ''`
-- `NameError: name 'gr' is not defined`
-- `ReadTimeout` errors
 
-Replace your UI `app.py` with:
-`patches/gradio-ui/app.py`
+If your UI crashed with: -
+`ValueError: could not convert string to float: ''` -
+`NameError: name 'gr' is not defined` - `ReadTimeout` errors
+
+Replace your UI `app.py` with: `patches/gradio-ui/app.py`
 
 Then rebuild UI:
-```bash
+
+``` bash
 docker compose up -d --build gradio-ui
 ```
-
-## How students add datasets (GitHub UI)
-Students can upload `.md/.txt` into `security-memory/data/` using GitHub’s “Upload files”.
-
-If you want the memory to be present for every student:
-- commit the corpus into the repo (small excerpts recommended)
-- students run ingestion locally to populate their Qdrant instance
