@@ -3,7 +3,10 @@ import time
 import uuid
 import asyncio
 import logging
-from app.security_memory.router import router as memory_router
+from typing import Optional, Literal
+
+# ✅ Prefer relative import so it works reliably inside the package
+from .security_memory.router import router as memory_router
 
 from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.responses import PlainTextResponse
@@ -123,7 +126,11 @@ async def ingest(article: ArticleIn, request: Request):
 # -----------------------------
 # Core chat implementation
 # -----------------------------
-async def _chat_impl(message: str, rid: str):
+async def _chat_impl(
+    message: str,
+    rid: str,
+    detail_level: Optional[Literal["basic", "standard", "advanced"]] = None,
+):
     t0 = time.time()
 
     # 1) Retrieve
@@ -131,10 +138,10 @@ async def _chat_impl(message: str, rid: str):
     sources = await asyncio.wait_for(retrieve_sources(message), timeout=RETRIEVE_TIMEOUT_S)
     t_retr = (time.time() - t_retr0) * 1000
 
-    # 2) Prompt
+    # 2) Prompt (pass detail_level through)
     t_pr0 = time.time()
     prompt = await asyncio.wait_for(
-        asyncio.to_thread(build_prompt, message, sources),
+        asyncio.to_thread(build_prompt, message, sources, detail_level),
         timeout=PROMPT_TIMEOUT_S,
     )
     t_pr = (time.time() - t_pr0) * 1000
@@ -170,7 +177,10 @@ async def chat(payload: ChatIn, request: Request):
     rid = getattr(request.state, "request_id", str(uuid.uuid4()))
 
     try:
-        result = await asyncio.wait_for(_chat_impl(payload.message, rid), timeout=CHAT_TOTAL_TIMEOUT_S)
+        result = await asyncio.wait_for(
+            _chat_impl(payload.message, rid, getattr(payload, "detail_level", None)),
+            timeout=CHAT_TOTAL_TIMEOUT_S,
+        )
         CHAT_COUNT += 1
         # Keep /chat clean: only answer + sources
         return {"answer": result["answer"], "sources": result["sources"]}
@@ -210,7 +220,7 @@ async def debug_prompt(payload: ChatIn, request: Request):
     try:
         sources = await asyncio.wait_for(retrieve_sources(payload.message), timeout=RETRIEVE_TIMEOUT_S)
         prompt = await asyncio.wait_for(
-            asyncio.to_thread(build_prompt, payload.message, sources),
+            asyncio.to_thread(build_prompt, payload.message, sources, getattr(payload, "detail_level", None)),
             timeout=PROMPT_TIMEOUT_S,
         )
         return {"prompt": prompt, "sources": sources, "prompt_chars": len(prompt)}
@@ -228,7 +238,10 @@ async def debug_chat(payload: ChatIn, request: Request):
     require_api_key(request)
     rid = getattr(request.state, "request_id", str(uuid.uuid4()))
     try:
-        result = await asyncio.wait_for(_chat_impl(payload.message, rid), timeout=CHAT_TOTAL_TIMEOUT_S)
+        result = await asyncio.wait_for(
+            _chat_impl(payload.message, rid, getattr(payload, "detail_level", None)),
+            timeout=CHAT_TOTAL_TIMEOUT_S,
+        )
         return result
     except asyncio.TimeoutError:
         logger.error(f"[{rid}] /debug/chat: TOTAL TIMEOUT after {CHAT_TOTAL_TIMEOUT_S}s")
