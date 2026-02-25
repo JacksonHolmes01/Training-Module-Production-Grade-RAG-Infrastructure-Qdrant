@@ -5,32 +5,61 @@ import httpx
 
 from .schemas import MemoryQueryIn, MemoryQueryOut, MemoryChunk, MemoryHealthOut
 
+# -----------------------------
+# Config
+# -----------------------------
 QDRANT_URL = os.getenv("QDRANT_URL", "http://qdrant:6333").rstrip("/")
-EMBEDDINGS_BASE_URL = os.getenv("EMBEDDINGS_BASE_URL", "http://text-embeddings:80").rstrip("/")
+
+# Use Ollama embeddings for Security Memory so dimensions match ingestion
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434").rstrip("/")
+SECURITY_EMBED_MODEL = os.getenv("SECURITY_EMBED_MODEL", "nomic-embed-text")
 
 SECURITY_COLLECTION = os.getenv("SECURITY_COLLECTION", "ExpandedVSCodeMemory")
 SECURITY_TOP_K = int(os.getenv("SECURITY_TOP_K", "6"))
-EMBEDDINGS_DIM = int(os.getenv("EMBEDDINGS_DIM", "384"))
 
-async def _embed(texts: List[str]) -> List[List[float]]:
-    # TEI-compatible: POST /embed { "inputs": [...] } -> [[...], ...]
-    async with httpx.AsyncClient(timeout=180.0) as client:
-        r = await client.post(f"{EMBEDDINGS_BASE_URL}/embed", json={"inputs": texts})
+# IMPORTANT: security memory collection vector size must match the embedding model used here
+SECURITY_EMBED_DIM = int(os.getenv("SECURITY_EMBED_DIM", "768"))
+
+
+# -----------------------------
+# Embeddings (Ollama)
+# -----------------------------
+async def _embed(text: str) -> List[float]:
+    """
+    Ollama embeddings API expects one prompt per request.
+    Returns a single embedding vector (list[float]).
+    """
+    timeout = httpx.Timeout(180.0, connect=30.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        r = await client.post(
+            f"{OLLAMA_BASE_URL}/api/embeddings",
+            json={"model": SECURITY_EMBED_MODEL, "prompt": text},
+        )
         r.raise_for_status()
         data = r.json()
-        if not isinstance(data, list):
-            raise ValueError("Unexpected embeddings response shape from embeddings service")
-        return data
+        emb = data.get("embedding")
+        if not emb or not isinstance(emb, list):
+            raise ValueError(f"Unexpected Ollama embeddings response: {data}")
+        return emb
 
+
+# -----------------------------
+# Qdrant collection ensure
+# -----------------------------
 async def _ensure_collection() -> None:
     async with httpx.AsyncClient(timeout=15.0) as client:
         r = await client.get(f"{QDRANT_URL}/collections/{SECURITY_COLLECTION}")
         if r.status_code == 200:
             return
-        payload = {"vectors": {"size": EMBEDDINGS_DIM, "distance": "Cosine"}}
+
+        payload = {"vectors": {"size": SECURITY_EMBED_DIM, "distance": "Cosine"}}
         cr = await client.put(f"{QDRANT_URL}/collections/{SECURITY_COLLECTION}", json=payload)
         cr.raise_for_status()
 
+
+# -----------------------------
+# Health
+# -----------------------------
 async def memory_health() -> MemoryHealthOut:
     await _ensure_collection()
     async with httpx.AsyncClient(timeout=10.0) as client:
@@ -43,16 +72,28 @@ async def memory_health() -> MemoryHealthOut:
                 points = (info.json().get("result", {}) or {}).get("points_count")
             except Exception:
                 points = None
+
     note = None
     if points in (0, None):
         note = "Collection exists but appears empty. Run: docker exec -i ingestion-api python -m app.security_memory.ingest"
-    return MemoryHealthOut(ok=ok, collection=SECURITY_COLLECTION, qdrant_url=QDRANT_URL, points_count=points, note=note)
 
+    return MemoryHealthOut(
+        ok=ok,
+        collection=SECURITY_COLLECTION,
+        qdrant_url=QDRANT_URL,
+        points_count=points,
+        note=note,
+    )
+
+
+# -----------------------------
+# Query
+# -----------------------------
 async def query_memory(payload: MemoryQueryIn) -> MemoryQueryOut:
     await _ensure_collection()
     top_k = payload.top_k or SECURITY_TOP_K
 
-    qvec = (await _embed([payload.query]))[0]
+    qvec = await _embed(payload.query)
 
     qfilter: Optional[Dict[str, Any]] = None
     if payload.tags:
@@ -62,13 +103,16 @@ async def query_memory(payload: MemoryQueryIn) -> MemoryQueryOut:
     body: Dict[str, Any] = {
         "vector": qvec,
         "limit": top_k,
-        "with_payload": True
+        "with_payload": True,
     }
     if qfilter:
         body["filter"] = qfilter
 
     async with httpx.AsyncClient(timeout=25.0) as client:
-        r = await client.post(f"{QDRANT_URL}/collections/{SECURITY_COLLECTION}/points/search", json=body)
+        r = await client.post(
+            f"{QDRANT_URL}/collections/{SECURITY_COLLECTION}/points/search",
+            json=body,
+        )
         r.raise_for_status()
         hits = (r.json().get("result") or [])
 
@@ -87,4 +131,9 @@ async def query_memory(payload: MemoryQueryIn) -> MemoryQueryOut:
             )
         )
 
-    return MemoryQueryOut(query=payload.query, collection=SECURITY_COLLECTION, top_k=top_k, results=results)
+    return MemoryQueryOut(
+        query=payload.query,
+        collection=SECURITY_COLLECTION,
+        top_k=top_k,
+        results=results,
+    )
