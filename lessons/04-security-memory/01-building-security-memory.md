@@ -369,17 +369,17 @@ If zero results appear:
 The lesson is complete when all of the following are true:
 
 -   `security-memory/data/` contains structured reference documents\
--   Ingestion runs successfully without errors\
--   `ExpandedVSCodeMemory` exists in Qdrant\
--   Points count is greater than zero\
--   Retrieval smoke test returns relevant chunks\
+-   Ingestion runs successfully without errors
+-   `ExpandedVSCodeMemory` exists in Qdrant
+-   Points count is greater than zero
+-   Retrieval smoke test returns relevant chunks
 -   Retrieved chunks contain meaningful metadata (title, tags, text)
 
 At this point:
 
--   The security corpus is indexed\
--   The vector database is populated\
--   The retrieval system is validated\
+-   The security corpus is indexed
+-   The vector database is populated
+-   The retrieval system is validated
 -   The memory layer is ready for API exposure
 
 ------------------------------------------------------------------------
