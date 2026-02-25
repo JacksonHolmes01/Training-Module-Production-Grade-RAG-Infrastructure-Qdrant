@@ -317,4 +317,3 @@ You are done when you can:
 - Use the prompt library to produce a grounded security review in your IDE
 - Implement at least one fix and confirm the lab still runs correctly after the change
 
-**Next:** Lesson 4.4: extending and customizing your security memory with your own documents and frameworks.
