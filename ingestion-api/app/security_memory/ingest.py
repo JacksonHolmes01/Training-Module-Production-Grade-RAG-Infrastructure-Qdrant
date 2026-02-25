@@ -19,6 +19,8 @@ from typing import List, Dict, Any
 
 import httpx
 
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434").rstrip("/")
+OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 QDRANT_URL = os.getenv("QDRANT_URL", "http://qdrant:6333").rstrip("/")
 EMBEDDINGS_BASE_URL = os.getenv("EMBEDDINGS_BASE_URL", "http://text-embeddings:80").rstrip("/")
 
@@ -61,13 +63,30 @@ def _chunk(text: str, chunk_chars: int, overlap: int) -> List[str]:
         start = max(0, end - overlap)
     return out
 
-async def _embed(texts):
-    async with httpx.AsyncClient(timeout=60.0) as client:
+async def _embed(texts: list[str]) -> list[list[float]]:
+    async with httpx.AsyncClient(timeout=120.0) as client:
         r = await client.post(
             f"{OLLAMA_BASE_URL}/api/embeddings",
-            json={"model": "nomic-embed-text", "prompt": texts[0]}
+            json={
+                "model": OLLAMA_EMBED_MODEL,
+                "prompt": texts[0] if len(texts) == 1 else texts,
+            },
         )
-        return [r.json()["embedding"]]
+        r.raise_for_status()
+        data = r.json()
+
+        # Ollama returns:
+        # { "embedding": [...] }
+        # or for batch:
+        # { "data": [ { "embedding": [...] }, ... ] }
+
+        if "embedding" in data:
+            return [data["embedding"]]
+
+        if "data" in data:
+            return [item["embedding"] for item in data["data"]]
+
+        raise RuntimeError("Unexpected embeddings response format")
 
 async def _ensure_collection() -> None:
     async with httpx.AsyncClient(timeout=15.0) as client:
