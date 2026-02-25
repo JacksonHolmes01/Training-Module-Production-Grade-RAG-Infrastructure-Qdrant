@@ -1,3 +1,4 @@
+from typing import Optional, Literal
 from pydantic import BaseModel, Field, HttpUrl
 
 class ArticleIn(BaseModel):
@@ -11,3 +12,10 @@ class ArticleIn(BaseModel):
 
 class ChatIn(BaseModel):
     message: str = Field(min_length=2, max_length=2000)
+
+    # Optional override. If omitted, your API can auto-route based on prompt complexity.
+    # Values:
+    # - "basic"    -> short, beginner-friendly
+    # - "standard" -> normal depth
+    # - "advanced" -> technical depth
+    detail_level: Optional[Literal["basic", "standard", "advanced"]] = None
