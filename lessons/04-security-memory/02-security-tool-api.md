@@ -295,4 +295,4 @@ You're done when all of the following are true:
 - `/memory/query` returns relevant, non-empty results
 - The base lab still works (chat, ingest, and retrieval are unaffected)
 
-**Next:** Lesson 4.3 — how to use this memory in a real IDE workflow, without building a whole new chatbot.
+[Lesson 3](https://github.com/JacksonHolmes01/Training-Module-Production-Grade-RAG-Infrastructure-Qdrant/blob/main/lessons/04-security-memory/03-ide-integration.md)
