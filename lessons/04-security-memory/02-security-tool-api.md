@@ -199,6 +199,8 @@ Breaking this down:
 - `answer.startswith("YES")` is defensive — even if the model adds a stray character, it'll still work.
 - `timeout=10.0` prevents the app from hanging if Ollama takes too long to respond.
 
+> **⚠️ Verify this:** The response shape `result["message"]["content"]` is correct for Ollama's `/api/chat` endpoint, but it can vary slightly depending on which version of Ollama you're running. If this function throws a `KeyError`, print out `result` to see the actual shape your Ollama returns and adjust the key path accordingly. (Use a LLM tool to troubleshoot and debug if you recieve this error)
+
 ---
 
 **Step 2 — Create a helper function that fetches memory context**
@@ -232,6 +234,9 @@ async def get_memory_context(query: str, top_k: int = 4) -> str:
 ```
 
 - `top_k: int = 4` means "fetch 4 chunks by default" — increase this if you want more context, decrease it if responses feel noisy.
+
+> **⚠️ Verify this:** The URL `http://localhost:8000/memory/query` assumes both functions are running inside the same `ingestion-api` container, where `localhost` correctly refers to itself. If you ever move this logic to a different container or service, you'd need to change `localhost` to the Docker service name instead (e.g., `http://ingestion-api:8000/memory/query`). If you're getting connection errors, this is the first thing to check. (Use a LLM tool to troubleshoot and debug if you recieve this error)
+
 - The `for` loop labels each chunk with its title and source (e.g., `[CIS Docker Benchmark | docker-security]`) so the AI can cite where information came from.
 
 ---
