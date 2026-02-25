@@ -27,7 +27,7 @@ EMBEDDINGS_BASE_URL = os.getenv("EMBEDDINGS_BASE_URL", "http://text-embeddings:8
 SECURITY_COLLECTION = os.getenv("SECURITY_COLLECTION", "ExpandedVSCodeMemory")
 SECURITY_CHUNK_CHARS = int(os.getenv("SECURITY_CHUNK_CHARS", "1200"))
 SECURITY_CHUNK_OVERLAP = int(os.getenv("SECURITY_CHUNK_OVERLAP", "200"))
-EMBEDDINGS_DIM = int(os.getenv("EMBEDDINGS_DIM", "384"))
+SECURITY_EMBED_DIM = int(os.getenv("SECURITY_EMBED_DIM", "768"))
 
 DATA_DIR = Path(os.getenv("SECURITY_DATA_DIR", "security-memory/data"))
 
@@ -98,7 +98,7 @@ async def _ensure_collection() -> None:
         r = await client.get(f"{QDRANT_URL}/collections/{SECURITY_COLLECTION}")
         if r.status_code == 200:
             return
-        payload = {"vectors": {"size": EMBEDDINGS_DIM, "distance": "Cosine"}}
+        payload = {"vectors": {"size": SECURITY_EMBED_DIM,, "distance": "Cosine"}}
         cr = await client.put(f"{QDRANT_URL}/collections/{SECURITY_COLLECTION}", json=payload)
         cr.raise_for_status()
 
