@@ -191,7 +191,7 @@ Run ingestion inside the running `ingestion-api` container:
 docker exec -i ingestion-api python -m app.security_memory.ingest
 ```
 
-Based on the large amount of files being ingested, ingestion could take anywhere from 2-30 min.
+Based on the large amount of files being ingested, ingestion could take anywhere from minutes to 1-2 hours. 
 To check if ingestion is occuring open a new tab in terminal (command + T) and run
 ``` bash
 docker stats
@@ -203,6 +203,8 @@ You can also run
 docker logs -f ingestion-api
 ```
 in a new tab to see chunking progress, embedding calls, and activity logs
+
+*If these are active and Ollama CPU use is high don't cancel the ingestion, it's just taking some time*
 
 ------------------------------------------------------------------------
 
@@ -323,7 +325,12 @@ pip install httpx
 ```
 
 ``` bash
-python security-memory/scripts/query_security_memory.py "what is OWASP A01"
+EDGE_API_KEY=$(grep -E '^EDGE_API_KEY=' .env | cut -d= -f2-)
+
+curl -i -sS -X POST http://localhost:8088/memory/query \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $EDGE_API_KEY" \
+  -d '{"query":"what is OWASP A01", "tags":["owasp"], "top_k":5}'
 ```
 
 This simulates how a real RAG system queries Qdrant.
