@@ -319,6 +319,10 @@ Ingestion verifies storage. Retrieval testing verifies usability.
 Run:
 
 ``` bash
+pip install httpx
+```
+
+``` bash
 python security-memory/scripts/query_security_memory.py "what is OWASP A01"
 ```
 
