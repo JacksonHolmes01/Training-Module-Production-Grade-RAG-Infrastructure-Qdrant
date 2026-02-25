@@ -157,3 +157,7 @@ Then rebuild UI:
 ``` bash
 docker compose up -d --build gradio-ui
 ```
+
+## Now go to the additional lessons!
+
+[Lesson 1](https://github.com/JacksonHolmes01/Training-Module-Production-Grade-RAG-Infrastructure-Qdrant/blob/main/lessons/04-security-memory/01-building-security-memory.md)
