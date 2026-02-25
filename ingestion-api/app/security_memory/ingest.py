@@ -32,7 +32,8 @@ QDRANT_URL = os.getenv("QDRANT_URL", "http://qdrant:6333").rstrip("/")
 SECURITY_COLLECTION = os.getenv("SECURITY_COLLECTION", "ExpandedVSCodeMemory")
 SECURITY_CHUNK_CHARS = int(os.getenv("SECURITY_CHUNK_CHARS", "1200"))
 SECURITY_CHUNK_OVERLAP = int(os.getenv("SECURITY_CHUNK_OVERLAP", "200"))
-SECURITY_EMBED_DIM = int(os.getenv("SECURITY_EMBED_DIM", "768"))
+_raw_dim = (os.getenv("SECURITY_EMBED_DIM") or "").strip()
+SECURITY_EMBED_DIM = int(_raw_dim) if _raw_dim else 768
 
 # IMPORTANT: default matches the compose mount
 DATA_DIR = Path(os.getenv("SECURITY_DATA_DIR", "/securitymemory/data"))
