@@ -54,8 +54,8 @@ services:
       SECURITY_TOP_K: "6"
       SECURITY_CHUNK_CHARS: "1200"
       SECURITY_CHUNK_OVERLAP: "200"
-      SECURITY_EMBED_MODEL: "${SECURITY_EMBED_MODEL}"
-      SECURITY_EMBED_DIM: "${SECURITY_EMBED_DIM}"
+      SECURITY_EMBED_MODEL: "${SECURITY_EMBED_MODEL:-nomic-embed-text}"
+      SECURITY_EMBED_DIM: "${SECURITY_EMBED_DIM:-768}"
     volumes:
       # ✅ Mount host folder into container (read-only)
       - ./security-memory/data:/securitymemory/data:ro
