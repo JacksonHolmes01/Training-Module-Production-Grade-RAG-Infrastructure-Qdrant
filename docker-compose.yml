@@ -51,7 +51,7 @@ services:
       SECURITY_CHUNK_OVERLAP: "200"
     volumes:
       # ✅ Mount host folder into container (read-only)
-      - ./securitymemory/data:/securitymemory/data:ro
+      - ./security-memory/data:/securitymemory/data:ro
     depends_on:
       qdrant:
         condition: service_started
