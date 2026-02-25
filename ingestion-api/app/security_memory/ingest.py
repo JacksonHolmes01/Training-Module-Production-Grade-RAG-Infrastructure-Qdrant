@@ -64,29 +64,34 @@ def _chunk(text: str, chunk_chars: int, overlap: int) -> List[str]:
     return out
 
 async def _embed(texts: list[str]) -> list[list[float]]:
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        r = await client.post(
-            f"{OLLAMA_BASE_URL}/api/embeddings",
-            json={
-                "model": OLLAMA_EMBED_MODEL,
-                "prompt": texts[0] if len(texts) == 1 else texts,
-            },
-        )
-        r.raise_for_status()
-        data = r.json()
+    """
+    Ollama embeddings API expects a single prompt per request.
+    This function embeds a list of texts by calling Ollama once per text.
+    """
+    out: list[list[float]] = []
 
-        # Ollama returns:
-        # { "embedding": [...] }
-        # or for batch:
-        # { "data": [ { "embedding": [...] }, ... ] }
+    timeout = httpx.Timeout(180.0, connect=30.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        for t in texts:
+            r = await client.post(
+                f"{OLLAMA_BASE_URL}/api/embeddings",
+                json={"model": OLLAMA_EMBED_MODEL, "prompt": t},
+            )
 
-        if "embedding" in data:
-            return [data["embedding"]]
+            # Helpful error detail if Ollama rejects the payload
+            if r.status_code >= 400:
+                raise RuntimeError(
+                    f"Ollama embeddings failed: {r.status_code} {r.text}"
+                )
 
-        if "data" in data:
-            return [item["embedding"] for item in data["data"]]
+            data = r.json()
+            emb = data.get("embedding")
+            if not emb:
+                raise RuntimeError(f"Unexpected Ollama embeddings response: {data}")
 
-        raise RuntimeError("Unexpected embeddings response format")
+            out.append(emb)
+
+    return out
 
 async def _ensure_collection() -> None:
     async with httpx.AsyncClient(timeout=15.0) as client:
