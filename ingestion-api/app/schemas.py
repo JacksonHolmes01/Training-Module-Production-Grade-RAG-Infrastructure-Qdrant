@@ -13,9 +13,8 @@ class ArticleIn(BaseModel):
 class ChatIn(BaseModel):
     message: str = Field(min_length=2, max_length=2000)
 
-    # Optional override. If omitted, your API can auto-route based on prompt complexity.
-    # Values:
+    # Default = "standard"
     # - "basic"    -> short, beginner-friendly
-    # - "standard" -> normal depth
+    # - "standard" -> normal depth (default)
     # - "advanced" -> technical depth
-    detail_level: Optional[Literal["basic", "standard", "advanced"]] = None
+    detail_level: Optional[Literal["basic", "standard", "advanced"]] = "standard"
