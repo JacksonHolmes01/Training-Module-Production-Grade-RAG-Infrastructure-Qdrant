@@ -16,7 +16,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 30
-      
+
   ollama:
     image: ollama/ollama:latest
     container_name: ollama
@@ -42,6 +42,16 @@ services:
       QDRANT_COLLECTION: "${QDRANT_COLLECTION}"
       EMBEDDINGS_MODEL_ID: "${EMBEDDINGS_MODEL_ID}"
       EMBEDDINGS_DIM: "${EMBEDDINGS_DIM}"
+
+      # ✅ Security memory corpus location (inside container)
+      SECURITY_DATA_DIR: "/securitymemory/data"
+      SECURITY_COLLECTION: "ExpandedVSCodeMemory"
+      SECURITY_TOP_K: "6"
+      SECURITY_CHUNK_CHARS: "1200"
+      SECURITY_CHUNK_OVERLAP: "200"
+    volumes:
+      # ✅ Mount host folder into container (read-only)
+      - ./securitymemory/data:/securitymemory/data:ro
     depends_on:
       qdrant:
         condition: service_started
