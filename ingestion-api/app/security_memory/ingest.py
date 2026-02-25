@@ -61,14 +61,13 @@ def _chunk(text: str, chunk_chars: int, overlap: int) -> List[str]:
         start = max(0, end - overlap)
     return out
 
-async def _embed(texts: List[str]) -> List[List[float]]:
-    async with httpx.AsyncClient(timeout=180.0) as client:
-        r = await client.post(f"{EMBEDDINGS_BASE_URL}/embed", json={"inputs": texts})
-        r.raise_for_status()
-        data = r.json()
-        if not isinstance(data, list):
-            raise ValueError("Unexpected embeddings response shape")
-        return data
+async def _embed(texts):
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        r = await client.post(
+            f"{OLLAMA_BASE_URL}/api/embeddings",
+            json={"model": "nomic-embed-text", "prompt": texts[0]}
+        )
+        return [r.json()["embedding"]]
 
 async def _ensure_collection() -> None:
     async with httpx.AsyncClient(timeout=15.0) as client:
