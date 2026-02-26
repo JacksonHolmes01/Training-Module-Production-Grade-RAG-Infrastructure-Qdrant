@@ -1,343 +1,236 @@
-# Docker in This Repo: A Textbook-Style Deep Dive (Qdrant RAG System)
+# Docker in This Repo: A Textbook-Style Deep Dive
 
-This document explains, at a systems level, **how and why Docker is used in the Qdrant-based RAG repository**. It is written so you can understand what you built **before you change it**.
+This document explains, at a systems level, how and why Docker is used in the Qdrant-based RAG repository. It is written so you can understand what you built before you change it.
 
-It is intentionally “textbook style”: definitions first, then architecture, then practical debugging.
+Read this before modifying any Docker configuration, adding services, or debugging infrastructure issues. The goal is not to memorize commands -- it is to build a mental model accurate enough that when something breaks, you can reason about where and why.
 
 ---
 
 ## Table of Contents
 
-1. What Docker is (and what it is not)  
-2. The mental model: images, containers, networks, volumes  
-3. The Lab architecture: who talks to whom and why (Qdrant version)  
-4. `docker-compose.yml` as an orchestration contract  
-5. Networking in this repo (internal-only design)  
-6. Data persistence with volumes (why your data survives restarts)  
-7. Startup sequencing vs readiness (why `depends_on` is not enough)  
-8. Resource limits (`mem_limit`) and performance troubleshooting  
-9. Logging, observability, and “where did my request go?”  
-10. Practical commands: day-to-day operations  
-11. Failure modes and how to debug them methodically (Qdrant + Gradio + NGINX)  
-12. Security rationale: boundaries, secrets, and exposure control  
-13. Appendix: a guided “trace a request” walkthrough (end-to-end)
+1. What Docker is and what problem it solves
+2. The core mental model: images, containers, networks, volumes
+3. The lab architecture: who talks to whom and why
+4. `docker-compose.yml` as an orchestration contract
+5. Networking in this repo: the internal-only design
+6. Data persistence with volumes
+7. Startup sequencing vs readiness
+8. Resource limits and performance
+9. Logging and observability
+10. Practical commands for day-to-day work
+11. Debugging failure modes methodically
+12. Security rationale: boundaries, secrets, and exposure control
+13. Appendix: tracing a request end-to-end
 
 ---
 
-# 1. What Docker Is (and What It Is Not)
+## 1. What Docker Is and What Problem It Solves
 
-## 1.1 The problem Docker solves
-When you build a real system, you are rarely running *one* program. You are running:
+When you build a real system, you are rarely running one program. You are running a database, an embedding service, an API, a gateway, and sometimes a UI -- all at once, all needing to be compatible versions, all needing to find each other on a network.
 
-- a database
-- an embedding service
-- an API
-- a gateway/proxy
-- sometimes a UI
-- plus supporting dependencies
+Without Docker, you would need to install and configure all of those on your own machine in the correct versions and then keep them compatible. On the next student's machine, the same setup might fail because they have a different OS, a different Python version, or a missing system library.
 
-Without Docker, you would need to install and configure all of those on your machine **in the correct versions**, and then keep them compatible.
+Docker solves this by packaging each service -- its code, dependencies, and runtime environment -- into a self-contained unit called an image. When you run the lab with `docker compose up -d`, every student gets the exact same services running in the exact same way, regardless of what is installed on their machine.
 
-Docker gives you a way to say:
+That is the core educational reason Docker is used here: it makes the lab reproducible.
 
-> “Run this system the same way on every student machine.”
+### What Docker is not
 
-That is the main educational reason Docker is used here.
-
-## 1.2 A common misconception
-Docker is not a virtual machine.
-
-- A VM bundles an entire operating system kernel.
-- Docker containers share the host kernel.
-
-That means containers start faster and use less overhead than full VMs.
-
-What you get is:
-- an isolated filesystem for each service
-- its own process space
-- its own networking identity
-- reproducible startup and configuration
+Docker is not a virtual machine. A VM bundles an entire operating system kernel. Docker containers share the host kernel, which means they start faster and use less memory than full VMs. What you get is an isolated filesystem, its own process space, its own network identity, and reproducible startup -- without the overhead of a full OS.
 
 ---
 
-# 2. The Core Mental Model: Images, Containers, Networks, Volumes
+## 2. The Core Mental Model: Images, Containers, Networks, Volumes
 
-## 2.1 Images
-An **image** is the packaged artifact: code + dependencies + runtime environment.
+Before reading about the specific services in this repo, it helps to have these four concepts clearly defined.
 
-In this repo you use a mix of:
-- prebuilt images pulled from registries (e.g., `nginx`, `qdrant/qdrant`, `ollama/ollama`)
-- locally built images (e.g., `ingestion-api`, `gradio-ui`)
+### Images
 
-## 2.2 Containers
-A **container** is a running instance of an image.
+An image is a packaged, read-only artifact: code, dependencies, and runtime environment bundled together. In this repo you use a mix of prebuilt images pulled from registries (such as `nginx:1.27-alpine`, `qdrant/qdrant:latest`, and `ollama/ollama:latest`) and locally built images (such as `ingestion-api` and `gradio-ui`, which are built from Dockerfiles in the repo).
 
-A useful mental model:
-- image = blueprint
-- container = house built from the blueprint and currently occupied
+### Containers
 
-Containers can be stopped and restarted. Unless you attach a **volume**, their internal filesystem changes are usually ephemeral.
+A container is a running instance of an image. A useful way to think about it: an image is a blueprint, and a container is the building constructed from that blueprint and currently in use. You can run multiple containers from the same image, stop and restart them, and unless you have attached persistent storage, any changes written inside the container are lost when it is removed.
 
-## 2.3 Networks
-Docker networks create **private virtual LANs** for containers.
+### Networks
 
-In this repo you typically use one main network:
-- `internal` (bridge network)
+Docker networks create private virtual LANs for containers. In this repo, all services are connected to a network called `internal`. Containers on the same network can reach each other by service name (for example, `http://qdrant:6333`) using Docker's built-in DNS. Containers not connected to a network, or on different networks, cannot reach each other.
 
-Key concept:
-- If a container is not bound to the host with `ports:`, it is not reachable from your laptop.
-- It is only reachable from other containers on the same Docker network.
+This is important: if a service is not listed under `ports:` in `docker-compose.yml`, it is not reachable from your laptop. It is only reachable from other containers on the same network. This is intentional -- databases and model servers should not be publicly accessible.
 
-That is intentional: databases and model servers should not be exposed directly.
+### Volumes
 
-## 2.4 Volumes
-Volumes are Docker-managed persistent storage.
-
-In this repo:
-- `qdrant_data` stores the Qdrant database (collections, vectors, payloads)
-- `ollama_data` stores pulled Ollama models and cache
-
-That is why you can restart containers without losing:
-- your ingested documents
-- your downloaded models
+Volumes are Docker-managed persistent storage that lives outside the container filesystem. In this repo, `qdrant_data` stores the Qdrant database and `ollama_data` stores downloaded models. Because these are volumes, you can stop and recreate containers without losing your ingested documents or downloaded models. If you run `docker compose down` and then `docker compose up -d`, your data is still there.
 
 ---
 
-# 3. The Lab Architecture: Who Talks to Whom, and Why (Qdrant Version)
+## 3. The Lab Architecture: Who Talks to Whom and Why
 
-This system is a **layered RAG architecture**. Each service has one job.
-
-## 3.1 Services and responsibilities
+This system is a layered RAG architecture. Each service has exactly one job, and they communicate through well-defined interfaces. Understanding who calls whom is the foundation of being able to debug the system.
 
 ### Qdrant (vector database)
-Qdrant stores two kinds of information:
 
-1) **Vectors** (embeddings)  
-2) **Payloads** (metadata + text fields you attach to each vector)
+Qdrant stores two things for every document you ingest: a vector (a list of numbers representing the meaning of the text) and a payload (the metadata and text you want to get back when the document is retrieved). When you ask a question, Qdrant answers: "given this query vector, which stored vectors are most similar?"
 
-Qdrant answers:
-> “Given this query vector, which stored vectors are most similar?”
-
-Important difference vs Weaviate:
-- Qdrant does **not** “auto-vectorize” your text by itself.
-- You must generate embeddings elsewhere (an embedding model server) and send the vector to Qdrant.
+One important difference from some other vector databases: Qdrant does not convert text to vectors itself. You must generate embeddings elsewhere and send the vector to Qdrant. That is the job of the embeddings service.
 
 ### Embeddings service (model server)
-Your embeddings service converts:
-> text → numeric vector (e.g., 384 floats)
 
-Common implementations in labs:
-- Hugging Face Text Embeddings Inference (TEI)
-- sentence-transformers served via FastAPI
-- OpenAI embeddings (cloud)
-
-In this repo, the ingestion API treats the embeddings server as a dependency:
-- It calls an HTTP endpoint to get an embedding
-- Then it upserts points into Qdrant with that vector
+The embeddings service converts text into a numeric vector. In this repo, embeddings are generated using Ollama with the `nomic-embed-text` model. The ingestion API calls the Ollama embeddings endpoint to get a vector, then sends that vector to Qdrant.
 
 ### Ollama (local LLM runtime)
-- Runs the local language model you pulled (e.g., `llama3`, `llama3.2`, etc.)
-- Generates an answer given a prompt
+
+Ollama runs the local language model you pulled (for example, `llama3.1`). It takes a prompt as input and returns generated text as output. In the RAG flow, it is the final step: it receives a prompt that includes the retrieved sources and the user's question, and generates the answer.
 
 ### ingestion-api (FastAPI)
-The ingestion API is the “brain” that glues the system together:
 
-- Validates incoming documents (schema / request model)
-- Calls embeddings service to embed document text
-- Upserts documents into Qdrant (vector + payload)
-- For a question:
-  - embeds the query
-  - performs a similarity search in Qdrant
-  - builds a grounded prompt (question + retrieved sources)
-  - calls Ollama to generate the final response
-  - returns answer + sources
+The ingestion API is the brain of the system. It handles two main workflows.
+
+For ingestion: it receives a document, calls the embeddings service to convert the text to a vector, and upserts the vector plus metadata into Qdrant.
+
+For chat: it receives a question, embeds the question, searches Qdrant for the most similar documents, builds a prompt that includes the question and the retrieved sources, calls Ollama to generate an answer, and returns the answer along with the sources it used.
 
 ### NGINX (edge gateway)
-- Exposes one host port (e.g., `8088`)
-- Enforces an API key **before** traffic reaches the API
-- Proxies requests to the internal API container
 
-Key security idea:
-- The API is not public by default.
-- The only “front door” is the gateway.
+NGINX is the only service exposed on a host port (8088). It sits in front of the ingestion API and does two things: it checks that every incoming request has a valid API key, and it proxies authenticated requests to the ingestion API. Nothing reaches the API without going through NGINX first.
 
 ### Gradio UI
-- Browser interface for chat
-- Talks to NGINX (gateway), not directly to ingestion-api
-- Shows the answer + the retrieved sources
 
-## 3.2 The “production-like” design goal
-This lab is “production-like” because it has:
+The Gradio UI is the browser-based chat interface. It talks to NGINX, not directly to the ingestion API. This means it goes through the same authentication layer as any other client. It displays the answer and the sources retrieved from Qdrant.
 
-- service boundaries
-- a gateway
-- authentication at the edge
-- internal-only databases/model servers
-- a UI that only sees the gateway (not the DB)
+### The production-like design goal
 
-This is a minimal version of how real RAG systems are deployed.
+This lab is designed to mirror how real RAG systems are structured. It has service boundaries, a gateway with authentication, internal-only databases and model servers, and a UI that only sees the gateway. Understanding this architecture means you understand the patterns used in production systems, not just a toy demo.
 
 ---
 
-# 4. `docker-compose.yml` as an Orchestration Contract
+## 4. `docker-compose.yml` as an Orchestration Contract
 
-Compose is a human-readable contract that says:
+The `docker-compose.yml` file is more than a startup script. It is a human-readable contract that documents the entire architecture in one place. It specifies which services exist, which images run them, what environment variables they need, what network they are on, what persistent storage they use, which ports (if any) are exposed to your machine, and what healthchecks determine whether a service is ready.
 
-- which services exist
-- which images build/run them
-- what environment variables they need
-- what they can reach on the network
-- what persistent storage they use
-- what ports (if any) are exposed to your machine
-- what healthchecks determine “ready enough”
-
-A Compose file is not just “how to run it”.
-It is also documentation of **architecture decisions**.
+When you read `docker-compose.yml`, you are reading the architecture. When you change it, you are changing the architecture. That is why it is worth understanding every section rather than treating it as a configuration file to ignore.
 
 ---
 
-# 5. Networking in This Repo (Internal-Only Design)
+## 5. Networking in This Repo: The Internal-Only Design
 
-## 5.1 Why the database is on an internal network
-In most RAG systems you do **not** want:
+All services in this repo are on a single bridge network called `internal`. This means they can reach each other by service name, but they are not reachable from outside Docker unless explicitly published.
 
-- Qdrant exposed to the public internet
-- embeddings model server exposed to the public internet
-- Ollama exposed to the public internet
+The only published ports are NGINX (8088) and Gradio (7860). Qdrant (6333, 6334) is also published in this repo for debugging and inspection, but in a production environment it would not be.
 
-Instead you want one controlled entry point:
-- NGINX (or an API gateway) with authentication and logging
+The most important networking rule to remember: inside a container, `localhost` refers to the container itself, not your host machine. If you try to call `http://localhost:6333` from inside the `ingestion-api` container, it will fail because Qdrant is not running inside that container. The correct address is `http://qdrant:6333`, using the service name as the hostname.
 
-## 5.2 The most important networking fact
-Inside Docker, containers talk to each other by service name:
-
-- `http://qdrant:6333`
-- `http://ollama:11434`
-- `http://text-embeddings:80` (example)
-
-This works because Docker provides internal DNS on the `internal` network.
-
-If you try to call `http://localhost:6333` **from inside a container**, it usually fails because:
-- inside a container, `localhost` refers to the container itself, not your host.
+This trips up many students. If you see a connection error inside a container, check whether you are using `localhost` when you should be using a service name.
 
 ---
 
-# 6. Data Persistence with Volumes (Why Your Data Survives Restarts)
+## 6. Data Persistence with Volumes
 
-## 6.1 What happens without a volume
-If Qdrant wrote all of its data inside the container filesystem, you would lose your data when you recreate the container.
+Without volumes, every time you recreate a container its internal filesystem starts fresh. For Qdrant, that would mean losing all your ingested documents. For Ollama, that would mean re-downloading models every time.
 
-## 6.2 What the volume does
-With a volume such as:
+Volumes solve this by storing data outside the container in Docker-managed storage. The mappings in `docker-compose.yml` are:
 
-- `qdrant_data:/qdrant/storage`
+- `qdrant_data:/qdrant/storage` -- Qdrant's database files
+- `ollama_data:/root/.ollama` -- Ollama's downloaded models and cache
 
-Docker stores the data outside the container, managed by Docker, so the container can be rebuilt/replaced while the data remains.
-
-This is why you can:
-- `docker compose down`
-- `docker compose up -d`
-and still have your collections and points.
+These volumes persist across `docker compose down` and `docker compose up -d`. The only way to wipe them is to run `docker compose down -v`, which explicitly removes volumes. Be careful with that command -- it deletes your ingested data and your downloaded models.
 
 ---
 
-# 7. Startup Sequencing vs Readiness (Why `depends_on` Is Not Enough)
+## 7. Startup Sequencing vs Readiness
 
-Compose `depends_on` answers:
-> “Start A before B.”
+`depends_on` in `docker-compose.yml` controls the order in which Docker starts containers. It does not wait for a service to be fully ready before starting the next one.
 
-But real systems need:
-> “Don’t *use* A until A is actually ready.”
+This distinction matters because a container can be "Up" while the service inside is still initializing. Qdrant might be running but still loading collections. Ollama might be running but still pulling a model on first request. The ingestion API might start before Qdrant is ready to accept connections.
 
-Example: Qdrant might be “running” but still initializing storage or loading a large collection.
+That is why this repo uses healthchecks alongside `depends_on`. Healthchecks define what "ready" actually means for each service, using real HTTP requests rather than just checking whether the process started. The `condition: service_healthy` option in `depends_on` tells Docker to wait until the healthcheck passes before starting the dependent service.
 
-That is why you use:
-- healthchecks
-- retry loops in application code
-- timeouts and backoff
-
-A common student confusion:
-- “My container says Up… why does my request fail?”
-
-Answer:
-- “Up” is not the same as “Ready.”
+If you see a container that is "Up" but requests are failing, the service may still be initializing. Check the logs and wait a moment before assuming something is broken.
 
 ---
 
-# 8. Resource Limits (`mem_limit`) and Performance Troubleshooting
+## 8. Resource Limits and Performance
 
-## 8.1 Why resource limits exist in labs
-On student machines, uncontrolled containers can:
-- eat all RAM
-- cause the OS to kill processes
-- make the system “mysteriously unstable”
+All services in this repo have `mem_limit` set. On student machines, uncontrolled containers can consume all available RAM, causing the OS to kill processes or making the system unstable. Memory limits give each service a soft boundary.
 
-Setting `mem_limit` gives a soft boundary.
+The limits are set conservatively. If you are running the full stack (Qdrant, Ollama, ingestion-api, NGINX, Gradio) on a machine with limited RAM, the most likely bottleneck is Ollama, since it loads the language model into memory.
 
-## 8.2 What to watch
-Common symptoms when memory is tight:
-- embeddings server becomes “unhealthy”
-- slow queries, timeouts
-- the OS kills the container (OOM)
+Common symptoms of memory pressure:
 
-Commands:
+- The embeddings service becomes unhealthy or times out
+- Chat responses are very slow
+- A container restarts unexpectedly (the OS killed it)
+
+To monitor memory usage in real time:
+
 ```bash
 docker stats
-docker logs --tail 200 <container>
+```
+
+To check logs for a specific container:
+
+```bash
+docker logs --tail 200 <container-name>
 ```
 
 ---
 
-# 9. Logging, Observability, and “Where Did My Request Go?”
+## 9. Logging and Observability
 
-When a request fails, you need to locate the layer that failed.
+When a request fails, the key skill is knowing which layer to look at first. The request path goes: your client (browser or curl) to NGINX to ingestion-api to Qdrant and Ollama. The error message you see tells you where the chain broke.
 
-A layered mental model:
+Common error patterns and what they mean:
 
-1) Browser/CLI  
-2) NGINX gateway  
-3) ingestion-api  
-4) Qdrant / embeddings / Ollama  
+**502 Bad Gateway** -- NGINX cannot reach ingestion-api, or ingestion-api crashed. Check ingestion-api logs first.
 
-If the user sees:
-- **502 Bad Gateway** → usually NGINX cannot reach ingestion-api, or ingestion-api crashed
-- **401/403** → API key issue at NGINX
-- **timeout** → slow upstream (often Ollama first-run model load) or client timeout too low
+**401 or 403** -- API key issue at NGINX. Check that you are passing `X-API-Key` correctly.
 
-Useful commands:
+**Timeout** -- a slow upstream. On first run, Ollama may take several minutes to load a model. Subsequent requests will be faster.
+
+**Empty results from retrieval** -- Qdrant collection exists but has no documents, or the collection name in your environment variables does not match what was created.
+
+Useful log commands:
+
 ```bash
 docker logs --tail 200 edge-nginx
 docker logs --tail 200 ingestion-api
 docker logs --tail 200 qdrant
-docker logs --tail 200 text-embeddings
 docker logs --tail 200 ollama
 ```
 
 ---
 
-# 10. Practical Commands: Day-to-Day Operations
+## 10. Practical Commands for Day-to-Day Work
 
-## 10.1 Start / stop
+### Start and stop the full stack
+
 ```bash
 docker compose up -d
 docker compose down
 ```
 
-## 10.2 Rebuild one service after code changes
+### Rebuild a single service after code changes
+
 ```bash
 docker compose up -d --build ingestion-api
 docker compose up -d --build gradio-ui
 ```
 
-## 10.3 Inspect containers
+### Check what is running
+
 ```bash
 docker ps
+```
+
+### Open a shell inside a container
+
+```bash
 docker exec -it ingestion-api sh
 docker exec -it edge-nginx sh
 ```
 
-## 10.4 Verify readiness (inside the network)
-From ingestion-api (internal DNS):
+### Verify internal connectivity from inside the network
+
 ```bash
 docker exec -i ingestion-api python - <<'PY'
 import urllib.request
@@ -347,183 +240,126 @@ PY
 
 ---
 
-# 11. Failure Modes and How to Debug Them Methodically (Qdrant + Gradio + NGINX)
+## 11. Debugging Failure Modes Methodically
 
-This section is written as “if you see X, do Y”.
+This section is written as "if you see X, check Y."
 
-## 11.1 NGINX returns 502 Bad Gateway
-**Meaning:** NGINX cannot get a valid response from ingestion-api.
+### 502 Bad Gateway from NGINX
 
-Checklist:
-1) Is ingestion-api running?
+NGINX cannot get a valid response from ingestion-api. Work through this checklist in order:
+
+Check whether ingestion-api is running:
 ```bash
 docker ps --filter "name=ingestion-api"
 ```
 
-2) Can NGINX reach ingestion-api from inside the network?
+Check whether NGINX can reach it:
 ```bash
-docker exec -i edge-nginx wget -qO- http://ingestion-api:8000/health || echo "nginx->ingestion-api failed"
+docker exec -i edge-nginx wget -qO- http://ingestion-api:8000/health || echo "failed"
 ```
 
-3) If ingestion-api is crashing, check logs:
+Check ingestion-api logs for crashes:
 ```bash
 docker logs --tail 200 ingestion-api
 ```
 
-Common causes:
-- ImportError (code refactor removed a function but main still imports it)
-- SyntaxError / missing dependency
-- env var parse failures
+Common causes: an ImportError from a code change, a SyntaxError, or an environment variable that fails to parse on startup.
 
-## 11.2 API returns: “Client error 404 … /collections/<name>/points/search”
-**Meaning:** Qdrant does not have that collection.
+### 404 on `/collections/<name>/points/search`
 
-Causes:
-- You never created the collection
-- Your code expects `QDRANT_COLLECTION=LabDoc`, but Qdrant has a different name
-- You wiped volumes (fresh Qdrant) and did not re-run schema/init
+Qdrant does not have that collection. Either it was never created, the collection name in your environment variables does not match what exists in Qdrant, or you wiped volumes and did not re-ingest.
 
-Fix:
-1) List collections:
+List existing collections:
 ```bash
 curl -sS http://localhost:6333/collections | python -m json.tool
 ```
 
-2) Ensure your app creates the collection if missing (recommended lab behavior).
-If your code does *not* auto-create, create it manually (example, 384 dims):
+If the collection is missing, re-run ingestion. If the name is wrong, check `QDRANT_COLLECTION` in your `.env` file.
+
+### Gradio UI times out
+
+The UI client gave up waiting for a response. Common causes: Ollama is loading a model on first request (this can take several minutes), the embeddings service is slow, or the prompt being sent to Ollama is very large.
+
+Check Ollama logs to see if it is still loading:
 ```bash
-curl -sS -X PUT "http://localhost:6333/collections/LabDoc" \
-  -H "Content-Type: application/json" \
-  -d '{"vectors":{"size":384,"distance":"Cosine"}}' | python -m json.tool
+docker logs --tail 50 ollama
 ```
 
-3) Re-ingest at least one document (so retrieval has something to retrieve).
+If this is the first request after startup, wait a few minutes and try again.
 
-## 11.3 Gradio UI times out (ReadTimeout)
-**Meaning:** The UI client gave up waiting.
+### Qdrant shows as unhealthy but `/healthz` responds
 
-Common in RAG labs when:
-- Ollama is loading a model on first request (can be slow)
-- embeddings server is slow/unhealthy
-- retrieval returns lots of text and prompt is large
-- UI HTTP timeout is too small
+The Compose healthcheck may be too strict or not matching real behavior. Prefer HTTP healthchecks that use the actual endpoint your app relies on rather than TCP socket checks, which can be unreliable depending on timing.
 
-Fixes:
-- Increase HTTP timeout used by the UI client.
-- Ensure your “timeout env var” logic treats empty values safely.
-  - A blank env var should fall back to a default, not crash the UI.
+### Embeddings service connection errors
 
-## 11.4 Gradio container crashes with “NameError: gr is not defined”
-**Meaning:** your `import gradio as gr` line is missing or not executed.
-
-Fix:
-- Restore:
-```python
-import gradio as gr
-```
-- Rebuild the container:
-```bash
-docker compose up -d --build gradio-ui
-```
-
-## 11.5 Qdrant is “unhealthy” but `/healthz` works
-This happens when the Compose healthcheck is too strict or not representative.
-
-Example: checking a TCP socket might be flaky depending on timing.
-
-Fix:
-- Prefer HTTP healthchecks that match what your app actually uses:
-  - `/healthz` for Qdrant
-  - an embeddings readiness endpoint for your embeddings server
-
-## 11.6 Embeddings server “unhealthy” or missing
-If your ingestion-api environment contains:
-- `EMBEDDINGS_BASE_URL=http://text-embeddings:80`
-
-…but you do not actually have a `text-embeddings` service in Compose, then:
-- ingestion may fail
-- retrieval may fail (because query embedding fails)
-- chat may still “work” if you have fallback logic (but it will not be real semantic retrieval)
-
-Fix:
-- Ensure the embeddings service exists in Compose **and** the service name matches `EMBEDDINGS_BASE_URL`.
-- Verify from ingestion-api:
-```bash
-docker exec -i ingestion-api python - <<'PY'
-import urllib.request
-print(urllib.request.urlopen("http://text-embeddings:80/").status)
-PY
-```
+If your ingestion API is configured with `EMBEDDINGS_BASE_URL` pointing to a service that does not exist in your Compose file, embedding calls will fail silently or with connection errors. Verify the service name in your environment variables matches the service name in `docker-compose.yml`.
 
 ---
 
-# 12. Security Rationale: Boundaries, Secrets, and Exposure Control
+## 12. Security Rationale: Boundaries, Secrets, and Exposure Control
 
-This repo is intentionally conservative.
+This repo makes specific choices to teach production-like security habits.
 
-## 12.1 Only one exposed “front door”
-- Only NGINX is exposed on the host port (e.g., `8088`).
-- Everything else is internal.
+### One exposed front door
 
-This reduces the risk of:
-- accidentally exposing a DB to the public internet
-- students misconfiguring ports
-- “it works on my machine” differences
+Only NGINX is exposed on a host port. Everything else -- Qdrant, Ollama, the ingestion API -- is on the internal network. This reduces the risk of accidentally exposing a database to the internet and forces all traffic through a single authenticated gateway.
 
-## 12.2 Secrets live in `.env` (not in code)
-API keys should be injected as environment variables, not hardcoded.
+The exception in this repo is that Qdrant ports 6333 and 6334 are published for debugging. In a real deployment, those would be removed.
 
-Minimum best practice:
-- `.env` is not committed (or is a template)
-- students generate their own key locally
+### Secrets live in `.env`
+
+API keys and configuration values that vary by machine or student are kept in a `.env` file that is not committed to the repo. The `.env.example` file shows students what variables are needed without exposing real values.
+
+If you hardcode secrets in Python files or Dockerfiles and commit them, they become part of the git history permanently -- even if you delete them later. Use environment variables.
 
 ---
 
-# 13. Appendix: Trace a Request End-to-End
+## 13. Appendix: Tracing a Request End-to-End
 
-This is the “debugging superpower” exercise.
+This is the most useful debugging exercise you can do. Run through these steps in order to verify every layer of the system is working.
 
-## Step A — Verify gateway is alive
+### Step A: Verify the gateway is alive
+
 ```bash
 curl -i http://localhost:8088/proxy-health
 ```
 
-Expected:
-- HTTP 200
-- body: `ok`
+Expected: HTTP 200 with body `ok`. If this fails, NGINX is not running or not reachable.
 
-## Step B — Verify API health through the gateway
+### Step B: Verify the API through the gateway
+
 ```bash
 EDGE_API_KEY=$(grep -E '^EDGE_API_KEY=' .env | cut -d= -f2-)
-
 curl -i http://localhost:8088/health -H "X-API-Key: $EDGE_API_KEY"
 ```
 
-Expected: HTTP 200 with JSON like:
-```json
-{"ok":true,"uptime_s":123,"ingested":0,"chats":0,"errors":0}
-```
+Expected: HTTP 200 with JSON like `{"ok":true,"uptime_s":123}`. If this fails, the API key may be wrong or ingestion-api is down.
 
-## Step C — Verify Qdrant health
+### Step C: Verify Qdrant
+
 ```bash
 curl -sS http://localhost:6333/healthz
 ```
 
-Expected:
-- `healthz check passed`
+Expected: `healthz check passed`. If this fails, Qdrant is not running or still initializing.
 
-## Step D — Verify embeddings reachability (from inside network)
+### Step D: Verify embeddings reachability from inside the network
+
 ```bash
 docker exec -i ingestion-api python - <<'PY'
 import os, urllib.request
-base = os.getenv("EMBEDDINGS_BASE_URL","")
-print("EMBEDDINGS_BASE_URL=", base)
-print("HTTP=", urllib.request.urlopen(base).status)
+base = os.getenv("OLLAMA_BASE_URL", "")
+print("OLLAMA_BASE_URL =", base)
+print("status =", urllib.request.urlopen(f"{base}/api/tags").status)
 PY
 ```
 
-## Step E — Ingest one doc, then retrieve it
-Ingestion:
+Expected: status 200. If this fails, Ollama is not reachable from inside the ingestion-api container.
+
+### Step E: Ingest a document and retrieve it
+
+Ingest:
 ```bash
 curl -i -X POST "http://localhost:8088/ingest" \
   -H "Content-Type: application/json" \
@@ -532,29 +368,22 @@ curl -i -X POST "http://localhost:8088/ingest" \
     "title": "Smoke Test Doc",
     "url": "https://example.com/smoke-test",
     "source": "smoke-test",
-    "published_date": "2026-02-13",
-    "text": "This document exists to verify ingestion, embedding, storage, retrieval, and generation work end-to-end."
+    "published_date": "2026-01-01",
+    "text": "This document exists to verify ingestion, embedding, storage, and retrieval work end-to-end."
   }'
 ```
 
-Retrieval:
+Retrieve:
 ```bash
 curl -sS -G "http://localhost:8088/debug/retrieve" \
   -H "X-API-Key: $EDGE_API_KEY" \
   --data-urlencode "q=verify ingestion embedding retrieval" | python -m json.tool
 ```
 
-If retrieval fails, return to Section 11 and debug layer-by-layer.
+If retrieval returns results, the full pipeline is working. If it returns empty results, go back to Step C and work through the checklist in Section 11.
 
 ---
 
-## Closing note
-The point of this architecture is not “Docker for Docker’s sake”.
+## Closing Note
 
-The point is:
-- repeatable labs
-- production-like boundaries
-- controlled exposure
-- realistic debugging practice
-
-Once you can trace a request end-to-end, you can modify the system safely.
+The architecture in this repo is not Docker for its own sake. It exists to give you a realistic, debuggable system where each layer has a clear responsibility and a clear interface. Once you can trace a request end-to-end and reason about which layer is responsible for which failure, you have the mental model needed to modify the system safely and confidently.
