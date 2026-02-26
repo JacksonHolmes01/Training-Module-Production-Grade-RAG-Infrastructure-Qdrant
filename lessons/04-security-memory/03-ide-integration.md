@@ -2,7 +2,7 @@
 
 > **What you're building:** not another chatbot, but a real workflow where your IDE assistant retrieves the right security references and uses them to produce grounded, citeable fixes to actual lab files.
 
-> **Your assistant just got an upgrade.** Up until now, the AI in this lab could answer cybersecurity questions, explain frameworks, and help you understand concepts. With the memory and API you built in Lessons 4.1 and 4.2, it can now do something more powerful: you can point it at real files in your project, such as a Dockerfile, a config, or an API handler, and it will review them against actual security standards and suggest specific, sourced improvements. This lesson is where you put that capability to use.
+> **Upgraded Capabilities.** Up until now, the AI in this lab could answer cybersecurity questions, explain frameworks, and help you understand concepts. With the memory and API you built in Lessons 4.1 and 4.2, it can now do something more powerful: you can point it at real files in your project, such as a Dockerfile, a config, or an API handler, and it will review them against actual security standards and suggest specific, sourced improvements. This lesson is where you put that capability to use.
 
 This lesson teaches a workflow that works in both VS Code and Cursor, even if you have not configured any special integrations.
 
