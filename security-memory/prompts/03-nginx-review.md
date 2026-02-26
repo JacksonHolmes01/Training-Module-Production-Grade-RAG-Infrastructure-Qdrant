@@ -1,4 +1,4 @@
-# Prompt 04 — FastAPI Ingestion API Security Review
+# Prompt 03 — NGINX Reverse Proxy Security Review
 
 ## Step 1: Make sure you are in the repo root
 
@@ -13,9 +13,9 @@ curl -sS -X POST http://localhost:8088/memory/query \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $EDGE_API_KEY" \
   -d '{
-    "query": "api key authentication input validation rate limiting logging secrets fastapi security",
+    "query": "nginx reverse proxy security auth enforcement timeouts headers rate limiting",
     "top_k": 10
-  }' > /tmp/api_security_refs.json
+  }' > /tmp/nginx_security_refs.json
 ```
 
 ## Step 3: Extract the plain text from the results
@@ -23,7 +23,7 @@ curl -sS -X POST http://localhost:8088/memory/query \
 ```bash
 python3 -c "
 import json
-data = json.load(open('/tmp/api_security_refs.json'))
+data = json.load(open('/tmp/nginx_security_refs.json'))
 for r in data['results']:
     print(r['text'])
     print('---')
@@ -34,7 +34,7 @@ Copy all the text that prints out — you will paste it into the chat in the nex
 
 ## Step 4: Open the IDE chat and paste this prompt
 
-Open `ingestion-api/app/main.py` in your IDE by clicking it in the file explorer. Then open the AI chat panel (`Ctrl+Alt+I` in VS Code, `Cmd+L` in Cursor) and paste the following, replacing the placeholders with the text you copied in Step 3 and the contents of `main.py`:
+Open `nginx/templates/default.conf.template` in your IDE by clicking it in the file explorer. Then open the AI chat panel (`Ctrl+Alt+I` in VS Code, `Cmd+L` in Cursor) and paste the following, replacing the placeholders with the text you copied in Step 3 and the contents of the NGINX config:
 
 ```
 I am going to give you a set of security reference chunks retrieved from a vector database of security standards. After the references, I will share a file for you to review.
@@ -45,21 +45,21 @@ Your job:
 - Propose a minimal fix that keeps the lab functional
 - If a finding is not supported by the references provided, say so explicitly — do not invent citations
 
-Focus especially on: input validation gaps (size and type limits), authentication bypass risks, secrets appearing in logs, and any endpoints that are missing auth checks.
+Focus especially on: auth enforcement for protected routes, request timeouts, headers that leak sensitive information, and rate limiting.
 
 References:
 [paste your retrieved chunks here]
 
 File to review:
-[paste the contents of ingestion-api/app/main.py here, or use @main.py in Cursor]
+[paste the contents of nginx/templates/default.conf.template here, or use @default.conf.template in Cursor]
 ```
 
 ## Step 5: Implement and validate
 
-Apply the fixes the AI proposes one at a time. After each fix, rebuild and confirm the API is still working:
+Apply the fixes the AI proposes one at a time. After each fix, confirm the proxy is still working:
 
 ```bash
-docker compose up -d --build ingestion-api
+curl -sS http://localhost:8088/proxy-health
 curl -sS -H "X-API-Key: $EDGE_API_KEY" http://localhost:8088/health | python -m json.tool
 ```
 
