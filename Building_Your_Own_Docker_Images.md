@@ -1,60 +1,57 @@
-# Building Your Own Docker Images (Qdrant Lab Edition)
-(Textbook-Style + Step-by-Step Labs)
+# Building Your Own Docker Images
 
-This document teaches you **how to create Docker images**, not just what they are — using the same patterns you see in the Qdrant RAG lab repo.
+This document teaches you how to create Docker images, not just what they are -- using the same patterns you see in the Qdrant RAG lab repo.
 
-It is meant to be read like a chapter of a textbook, and then followed like a lab manual.
+Before reading this, make sure you have read the Docker deep dive document. This document assumes you understand what images, containers, networks, and volumes are, and how the lab architecture is structured. If anything in Section 1 is unfamiliar, go back and read the deep dive first.
 
 ---
 
 ## Table of Contents
 
-1. Images vs containers (the exact difference)  
-2. How Docker builds images (layers, cache, and reproducibility)  
-3. Anatomy of a Dockerfile (each instruction explained)  
-4. Choosing a base image (security and size trade-offs)  
-5. Lab A: Build the `ingestion-api`-style FastAPI image step-by-step  
-6. Designing for fast rebuilds (cache best practices)  
-7. Multi-stage builds (why they matter)  
-8. Environment variables, `.env`, and secrets (what belongs where)  
-9. Exposing ports and binding addresses (why `0.0.0.0` matters)  
-10. Healthchecks and readiness (why “running” is not “ready”)  
-11. Tagging, naming, and versioning images  
-12. Debugging broken builds (common errors + fixes)  
-13. Publishing images (optional): Docker Hub / GHCR  
-14. Hardening checklist: non-root users, pinning, scanning  
+1. Images vs containers: the exact difference
+2. How Docker builds images: layers and caching
+3. Anatomy of a Dockerfile: every instruction explained
+4. Choosing a base image: security and size trade-offs
+5. Lab: build a FastAPI image step-by-step
+6. Designing for fast rebuilds
+7. Multi-stage builds
+8. Environment variables, `.env`, and secrets
+9. Exposing ports and binding addresses
+10. Healthchecks and readiness
+11. Tagging and versioning images
+12. Debugging broken builds
+13. Publishing images (optional)
+14. Hardening checklist
 
 ---
 
-# 1. Images vs Containers
+## 1. Images vs Containers: The Exact Difference
 
-- **Image**: a read-only blueprint (filesystem + metadata)
-- **Container**: a running instance of an image (a process using that filesystem)
+An **image** is a read-only blueprint: a filesystem snapshot plus metadata describing how to run it. It does not change. It does not run. It just exists as a packaged artifact.
 
-A useful mental model:
-- Image = frozen recipe
-- Container = the meal you cooked from that recipe
+A **container** is what happens when you run an image. Docker takes the image, adds a writable layer on top, starts the process, and gives it an isolated environment. When you stop and remove the container, that writable layer is gone. The image is untouched.
+
+A useful analogy: an image is a frozen recipe, and a container is the meal you cooked from it. You can cook the same recipe multiple times and get the same result. Eating one meal does not change the recipe.
 
 When you run:
 ```bash
 docker run nginx:1.27-alpine
 ```
 
-Docker:
-1) downloads the image (if you don’t have it)  
-2) creates a container from it  
-3) starts the main process  
+Docker downloads the image if you do not have it, creates a container from it, and starts the main process. The image stays unchanged. You can run it again and get a fresh container.
 
 ---
 
-# 2. How Docker Builds Images: Layers and Caching
+## 2. How Docker Builds Images: Layers and Caching
 
-## 2.1 Every Dockerfile instruction becomes a layer (usually)
-Docker builds images one step at a time. Each step produces a **layer**.
+### Every instruction creates a layer
 
-Layers are cached, so future builds are faster if earlier layers did not change.
+Docker builds images one instruction at a time. Each instruction in a Dockerfile produces a **layer** -- a snapshot of the filesystem at that point. Layers are stacked on top of each other to form the final image.
 
-Example:
+Layers are cached. If Docker has already built a layer and nothing that affects it has changed, it reuses the cached version instead of rebuilding it. This is what makes rebuilds fast.
+
+Consider this Dockerfile:
+
 ```dockerfile
 FROM python:3.11-slim
 WORKDIR /app
@@ -64,101 +61,83 @@ COPY . .
 CMD ["python", "-m", "app"]
 ```
 
-If you change only your app code:
-- Docker can reuse cached layers up through `pip install`
-- and only redo `COPY . .`
+If you change only your application code and rebuild:
+- Docker reuses the cached layers for `FROM`, `WORKDIR`, `COPY requirements.txt`, and `RUN pip install`
+- It only redoes `COPY . .` and everything after it
 
-## 2.2 Why caching is one of the main skills
-Being “good at Docker” often means:
-- structuring a Dockerfile so rebuilds are fast
-- knowing which edits invalidate cache
+If you change `requirements.txt`:
+- Docker reuses `FROM` and `WORKDIR`
+- It redoes `COPY requirements.txt`, `RUN pip install`, and everything after
 
-This matters in courses because:
-- students iterate quickly
-- rebuild time directly affects learning velocity
+### Why caching is a skill
 
----
-
-# 3. Anatomy of a Dockerfile (Every Instruction Explained)
-
-## `FROM`
-Chooses the base image:
-- sets your starting filesystem
-- sets the OS libraries you inherit
-
-## `WORKDIR`
-Sets the working directory inside the container:
-- creates the folder if it does not exist
-- avoids writing `cd /app` in commands
-
-## `COPY`
-Copies files from your computer into the image.
-
-Rule of thumb:
-- use `COPY` by default because it is explicit
-- use `.dockerignore` to keep the build context clean
-
-## `RUN`
-Runs a command at build time, producing a new layer.
-
-Typical uses:
-- install dependencies
-- compile code
-- create users
-- download artifacts (careful: this can make images huge)
-
-## `ENV`
-Sets environment variables inside the image.
-
-Important distinction:
-- `ENV` in Dockerfile sets defaults baked into the image
-- runtime env vars (Compose `environment:` / `.env`) override defaults
-
-## `EXPOSE`
-Documents which port the container listens on.
-
-Important: it does **not** publish a port to your host.
-
-Publishing happens with:
-- `docker run -p ...`
-- Compose `ports:`
-
-## `CMD` vs `ENTRYPOINT`
-- `CMD` is the default command (easy to override)
-- `ENTRYPOINT` is “always run this” (harder to override)
-
-In teaching repos, `CMD` is usually friendlier.
+Knowing how to structure a Dockerfile so rebuilds are fast is one of the most practical Docker skills. The rule is simple: put things that change rarely near the top, and things that change often near the bottom. This way, frequent changes only invalidate the last few layers rather than triggering a full rebuild.
 
 ---
 
-# 4. Choosing a Base Image: Security and Size Trade-Offs
+## 3. Anatomy of a Dockerfile: Every Instruction Explained
 
-## 4.1 Common base options for Python
-- `python:3.11-slim` (good default for teaching)
-- `python:3.11-alpine` (small, but can cause dependency pain)
-- `debian:bookworm-slim` + manual Python install (advanced)
+### `FROM`
 
-## 4.2 Why size matters
-Smaller images:
-- pull faster
-- build faster in CI
-- have fewer packages to exploit (smaller attack surface)
+Every Dockerfile starts with `FROM`. It sets the base image -- the starting filesystem and OS libraries your image inherits. Choosing the right base image affects your image size, security, and what system libraries are available.
 
-But smaller images sometimes require more manual installs for native dependencies.
+### `WORKDIR`
 
-In a RAG lab, image size can explode if you:
-- bake models into images (don’t)
-- copy datasets into images (usually don’t)
-- forget `.dockerignore` (common)
+Sets the working directory inside the container for all subsequent instructions. If the directory does not exist, Docker creates it. Using `WORKDIR` is cleaner than writing `RUN cd /app && ...` in every command.
+
+### `COPY`
+
+Copies files from your computer (the build context) into the image. Use `COPY` by default. It is explicit about what it copies and where it goes.
+
+A `.dockerignore` file (similar to `.gitignore`) tells Docker which files to exclude from the build context. Always create one -- it prevents large or sensitive files from being accidentally copied into your image.
+
+### `RUN`
+
+Executes a command at build time and creates a new layer with the result. Common uses: installing dependencies, creating users, downloading artifacts. Every `RUN` instruction adds a layer, so combine related commands with `&&` when it makes sense.
+
+### `ENV`
+
+Sets environment variables inside the image. These are baked into the image as defaults. Runtime environment variables (set in `docker-compose.yml` or `.env`) override them. Use `ENV` for things like `PYTHONDONTWRITEBYTECODE=1` that should always be set regardless of how the container is run.
+
+### `EXPOSE`
+
+Documents which port the container listens on. Important: `EXPOSE` does not publish a port to your host. It is documentation only. Publishing happens with `ports:` in `docker-compose.yml` or `-p` in `docker run`.
+
+### `CMD` vs `ENTRYPOINT`
+
+`CMD` sets the default command that runs when the container starts. It can be overridden easily when running the container. `ENTRYPOINT` sets a command that always runs and is harder to override. For teaching repos, `CMD` is usually the friendlier choice because it is easier to experiment with.
 
 ---
 
-# 5. Lab A: Build a FastAPI Image Step-by-Step (Ingestion-API Pattern)
+## 4. Choosing a Base Image: Security and Size Trade-offs
 
-This guided lab recreates the same build pattern used by the `ingestion-api` service, but in a tiny standalone project so you can see the essentials.
+### Common options for Python
 
-## 5.1 Create a minimal FastAPI project
-Folder structure:
+**`python:3.11-slim`** is the recommended default for this lab. It is based on Debian, has most commonly needed libraries, and is small enough for practical use without the dependency pain of Alpine.
+
+**`python:3.11-alpine`** is smaller but uses musl libc instead of glibc, which can cause compilation failures for packages with native dependencies. It saves space but can cost hours of debugging.
+
+**`debian:bookworm-slim` with manual Python install** is for advanced cases where you need precise control over the Python version and installed libraries.
+
+### Why image size matters
+
+Smaller images pull faster, build faster, and have fewer installed packages -- which means fewer potential vulnerabilities. But smaller base images sometimes require more manual installation work.
+
+In a RAG lab, image size can grow unexpectedly if you:
+- bake models into images (do not do this -- use volumes instead)
+- copy large datasets into the image
+- forget `.dockerignore` and copy your entire repo including data directories
+
+---
+
+## 5. Lab: Build a FastAPI Image Step-by-Step
+
+This lab recreates the same build pattern used by the `ingestion-api` service, stripped down to the essentials so you can see exactly how it works.
+
+### Create the project structure
+
+Create a new folder called `my-api` with the following layout:
+
 ```
 my-api/
   app/
@@ -168,7 +147,8 @@ my-api/
   .dockerignore
 ```
 
-Create `app/main.py`:
+### Create `app/main.py`
+
 ```python
 from fastapi import FastAPI
 
@@ -179,13 +159,15 @@ def health():
     return {"ok": True}
 ```
 
-Create `requirements.txt`:
+### Create `requirements.txt`
+
 ```
 fastapi==0.110.0
 uvicorn[standard]==0.27.1
 ```
 
-Create `.dockerignore` (recommended):
+### Create `.dockerignore`
+
 ```
 .git
 __pycache__
@@ -195,49 +177,54 @@ __pycache__
 data
 ```
 
-## 5.2 Write the Dockerfile (recommended version)
-Create `Dockerfile`:
+This prevents unnecessary files from being sent to Docker during the build. Without it, Docker copies your entire folder including git history, virtual environments, and any data files.
+
+### Create the Dockerfile
+
 ```dockerfile
 FROM python:3.11-slim
 
-# 1) runtime settings (best practice)
+# Prevent Python from writing .pyc files and enable unbuffered output
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# 2) set workdir
+# Set working directory
 WORKDIR /app
 
-# 3) dependency install (cache-friendly)
+# Install dependencies first (cache-friendly)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 4) copy app code last (preserves cache when code changes)
+# Copy application code last (changes most often)
 COPY app ./app
 
-# 5) start server
+# Document the port
 EXPOSE 8000
+
+# Start the server
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 ```
 
 ### Why `--host 0.0.0.0` matters
-Inside a container:
-- `127.0.0.1` means “only inside the container”
-- `0.0.0.0` means “listen on the container network interface”
 
-If you bind to `127.0.0.1`, your host may not be able to reach the port even if you publish it.
+Inside a container, `127.0.0.1` means "only accessible from inside this container." If you bind uvicorn to `127.0.0.1`, your host machine cannot reach it even if you publish the port. `0.0.0.0` tells uvicorn to listen on all network interfaces inside the container, which is required for port publishing to work.
 
-## 5.3 Build the image
+### Build the image
+
 From inside `my-api/`:
+
 ```bash
 docker build -t my-api:dev .
 ```
 
-## 5.4 Run the container
+### Run the container
+
 ```bash
 docker run --rm -p 8000:8000 my-api:dev
 ```
 
-Test:
+### Test it
+
 ```bash
 curl -sS http://localhost:8000/health
 ```
@@ -247,14 +234,15 @@ Expected:
 {"ok": true}
 ```
 
+If you see this, your image is working correctly. You have just built and run a FastAPI container using the same pattern as `ingestion-api`.
+
 ---
 
-# 6. Designing for Fast Rebuilds (Cache Best Practices)
+## 6. Designing for Fast Rebuilds
 
-## 6.1 The golden rule
-Copy dependency files first, install, then copy code.
+The single most important rule: copy dependency files first, install them, then copy your application code.
 
-Good:
+Good (fast rebuilds):
 ```dockerfile
 COPY requirements.txt .
 RUN pip install -r requirements.txt
@@ -267,33 +255,25 @@ COPY . .
 RUN pip install -r requirements.txt
 ```
 
-Because changing any file forces Docker to re-run everything after that line.
+In the bad version, changing any file in your project invalidates the cache at the `COPY . .` step, which forces `pip install` to re-run every time. In the good version, `pip install` only re-runs when `requirements.txt` changes.
 
-## 6.2 `.dockerignore` (the file people forget)
-A `.dockerignore` prevents junk files from being copied into the build context:
-- `.git/`
-- `__pycache__/`
-- `node_modules/`
-- large datasets
+For RAG labs specifically, add these to your `.dockerignore` to avoid accidentally including large files in the build context:
 
-For RAG labs, add:
-- `qdrant_data/` (if you keep local data directories)
-- any downloaded models or caches
+```
+qdrant_data/
+*.bin
+*.gguf
+models/
+```
 
 ---
 
-# 7. Multi-Stage Builds (Why They Matter)
+## 7. Multi-Stage Builds
 
-Multi-stage builds let you:
-- compile/build in one stage (with build tools)
-- copy only the final artifacts into a smaller runtime stage
+Multi-stage builds let you use one stage to compile or build something, then copy only the final artifacts into a smaller runtime image. This keeps the final image small by leaving behind build tools and intermediate files.
 
-This matters when:
-- you have native dependencies (Rust, C compilers)
-- you build frontends (Node)
-- you compile Python wheels
+A common example is a frontend build:
 
-A conceptual pattern:
 ```dockerfile
 FROM node:20 AS build
 WORKDIR /src
@@ -306,213 +286,166 @@ FROM nginx:1.27-alpine
 COPY --from=build /src/dist /usr/share/nginx/html
 ```
 
-In this Qdrant lab, you may not need multi-stage builds immediately, but it is the next step once you add:
-- a real frontend
-- compiled dependencies
-- a larger toolchain
+The final image contains only NGINX and the compiled frontend. The Node.js runtime and all build dependencies are left behind.
+
+In the current state of this lab you probably do not need multi-stage builds, but they become relevant when you add a compiled frontend, native Python extensions, or a larger toolchain. The pattern is worth knowing before you need it.
 
 ---
 
-# 8. Environment Variables, `.env`, and Secrets (What Belongs Where)
+## 8. Environment Variables, `.env`, and Secrets
 
-## 8.1 Three different places env vars can appear
-1) Dockerfile `ENV` → defaults baked into the image  
-2) Compose `environment:` → per-service runtime config  
-3) `.env` file → local developer/student configuration values  
+### Three places env vars can appear
 
-## 8.2 What belongs in `.env`
-Values that vary by machine/student:
-- API keys (e.g., `EDGE_API_KEY`)
-- model choice (e.g., `OLLAMA_MODEL`)
-- collection name (e.g., `QDRANT_COLLECTION`)
-- embeddings model id (e.g., `EMBEDDINGS_MODEL_ID`)
+**Dockerfile `ENV`** sets defaults baked into the image. These are present in every container run from the image unless overridden.
 
-## 8.3 What should not be hardcoded in code
-Secrets and machine-specific config should not be in Python files.
+**Compose `environment:`** sets per-service runtime configuration. These override Dockerfile defaults and are specific to how the service runs in your stack.
 
-If you commit secrets, students will:
-- reuse the same key
-- learn the wrong habit
-- accidentally leak credentials
+**`.env` file** holds values that vary by machine or student, such as API keys, model names, and collection names. Compose reads this file automatically and makes the values available to services via `${VARIABLE_NAME}` syntax.
 
-Use `.env.example` for teaching.
+### What belongs in `.env`
+
+Values that are different for each developer or student: API keys, model choices, collection names, and anything else that should not be hardcoded. Provide a `.env.example` with placeholder values so students know what to fill in.
+
+### What must never be hardcoded
+
+Secrets and machine-specific configuration must not appear in Python files, Dockerfiles, or anywhere else that gets committed to git. Once something is in git history, it is there permanently even if you delete it in a later commit. If you accidentally commit a secret, treat it as compromised and rotate it.
 
 ---
 
-# 9. Exposing Ports and Binding Addresses (Why `0.0.0.0` Matters)
+## 9. Exposing Ports and Binding Addresses
 
-## 9.1 `EXPOSE` vs `ports:`
-- `EXPOSE 8000` documents the internal port.
-- `ports: "8088:8088"` publishes a port to the host.
+### `EXPOSE` vs `ports:`
 
-Only publish ports that need to be accessed from outside Docker:
-- NGINX gateway (`8088`)
-- Gradio UI (`7860`)
-- optional: Qdrant (`6333`) for debugging/inspection
+`EXPOSE` in a Dockerfile is documentation. It tells anyone reading the file which port the service uses, but it does not make the port accessible from your host.
 
-## 9.2 Why databases should not be published (in real life)
-Publishing Qdrant directly is convenient for labs, but risky in production.
+`ports:` in `docker-compose.yml` actually publishes a port, mapping a host port to a container port. For example, `"8088:8088"` means requests to port 8088 on your laptop are forwarded to port 8088 in the NGINX container.
 
-The safer pattern:
-- Keep Qdrant internal
-- Expose only the API gateway
+Only publish ports that genuinely need to be accessed from outside Docker. In this repo: NGINX (8088) and Gradio (7860). Qdrant is published for debugging, but in production it would stay internal.
 
-In labs, publishing Qdrant can still be okay if you emphasize:
-- “this is for learning and debugging”
-- “don’t do this in production without auth + network controls”
+### The `0.0.0.0` rule
+
+Any server running inside a container must bind to `0.0.0.0` (all interfaces), not `127.0.0.1` (loopback only). Binding to `127.0.0.1` inside a container makes the service invisible to everything outside the container, including port publishing. This is a common mistake when adapting code written for local development to run in Docker.
 
 ---
 
-# 10. Healthchecks and Readiness (Why “Running” Is Not “Ready”)
+## 10. Healthchecks and Readiness
 
-## 10.1 Running vs ready
-A container can be “Up” while the service inside is still starting.
+A container being "Up" does not mean the service inside is ready. Startup takes time. Models need to load. Databases need to initialize. Healthchecks are how Docker knows when a service is actually ready to receive traffic.
 
-That is why healthchecks exist.
+A good healthcheck makes a real HTTP request to an endpoint your application actually uses, with a reasonable timeout and enough retries to cover slow startup. The Qdrant healthcheck in this repo is a good example:
 
-## 10.2 Good healthchecks look like real usage
-Prefer:
-- HTTP endpoints your app will actually call
-- short timeouts
-- reasonable retry counts
+```yaml
+healthcheck:
+  test: ["CMD-SHELL", "wget -qO- http://localhost:6333/healthz >/dev/null 2>&1 || exit 1"]
+  interval: 10s
+  timeout: 5s
+  retries: 40
+```
 
-Example (Qdrant):
-- `/healthz` is better than “is port open” because it proves the server is responding.
+It checks the actual `/healthz` endpoint, waits up to 10 seconds between checks, and retries up to 40 times -- giving Qdrant up to 400 seconds to become ready on a slow machine.
 
-Example (embeddings server):
-- whatever readiness endpoint it provides (or a minimal GET).
+### A real failure caused by environment variable parsing
 
-## 10.3 A real lab failure caused by env parsing
-If you parse an env var like:
+If your code does this:
+
 ```python
 timeout = float(os.getenv("GRADIO_HTTP_TIMEOUT_S", "300"))
 ```
 
-…but Compose passes an empty string, you can crash with:
-- `ValueError: could not convert string to float: ''`
+And Compose passes an empty string for that variable, Python will crash with `ValueError: could not convert string to float: ''`. Safer:
 
-Safer:
 ```python
 raw = os.getenv("GRADIO_HTTP_TIMEOUT_S") or "300"
 timeout = float(raw)
 ```
 
----
-
-# 11. Tagging, Naming, and Versioning Images
-
-## 11.1 Tags are not optional in real systems
-Avoid `latest` for your own builds in production.
-
-Use tags like:
-- `ingestion-api:0.1.0`
-- `ingestion-api:dev`
-- `ingestion-api:sha-<gitsha>`
-
-## 11.2 Why versioning matters in a course
-If a student gets a bug, you want to reproduce it with the same image version.
+The `or "300"` means an empty string falls back to the default, rather than crashing.
 
 ---
 
-# 12. Debugging Broken Builds (Common Errors + Fixes)
+## 11. Tagging and Versioning Images
 
-## 12.1 “ModuleNotFoundError” at runtime
-Meaning:
-- dependency not installed
-- wrong working directory
-- code not copied into the image
+When Docker builds an image without a tag, it gets tagged `latest` by default. Using `latest` for your own builds creates problems: you cannot tell which version is running, you cannot roll back to a previous version, and automated systems may pull a different version than you intended.
 
-Fix checklist:
-- confirm `requirements.txt` includes it
-- confirm `COPY` lines exist and paths are correct
-- rebuild with `--no-cache` if needed:
+Better tagging practices:
+
+```bash
+docker build -t ingestion-api:0.1.0 .
+docker build -t ingestion-api:dev .
+docker build -t ingestion-api:sha-$(git rev-parse --short HEAD) .
+```
+
+For a teaching lab, using a version like `dev` or `0.1.0` is enough. The key habit is not using `latest` for images you build yourself, even if it is fine for well-known external images like `nginx:1.27-alpine`.
+
+---
+
+## 12. Debugging Broken Builds
+
+### "ModuleNotFoundError" at runtime
+
+The module is not installed or not copied into the image. Check that it is in `requirements.txt`, that `pip install` ran successfully during the build, and that your `COPY` instructions include the files that import it. If you suspect a stale cache, rebuild without cache:
+
 ```bash
 docker build --no-cache -t my-api:dev .
 ```
 
-## 12.2 “ImportError: cannot import name X”
-Meaning:
-- you renamed or deleted a function
-- another file still imports the old name
+### "ImportError: cannot import name X"
 
-Fix:
-- update imports
-- run a quick “import smoke test” locally
-- rebuild container
+A function was renamed or removed but something still imports the old name. Update imports, run a quick local check if possible, and rebuild.
 
-## 12.3 “NameError: gr is not defined” (Gradio UI)
-Meaning:
-- missing `import gradio as gr`
+### 502 Bad Gateway from NGINX
 
-Fix:
-- add the import at the top
-- rebuild the UI container:
-```bash
-docker compose up -d --build gradio-ui
-```
+NGINX cannot reach the API. The most common causes are that the API container crashed on startup (check logs with `docker logs --tail 200 ingestion-api`) or there is a service name mismatch in the NGINX config.
 
-## 12.4 502 Bad Gateway (NGINX)
-Meaning:
-- NGINX can’t reach the upstream API
-- or upstream API is crashing
+### Container exits immediately after starting
 
-Fix:
-```bash
-docker logs --tail 200 ingestion-api
-docker exec -i edge-nginx wget -qO- http://ingestion-api:8000/health || echo "nginx->ingestion-api failed"
-```
+The main process crashed. Check the exit code with `docker ps -a` and the logs with `docker logs <container-id>`. Common causes: a missing environment variable, a failed import, or a syntax error in the application code.
 
 ---
 
-# 13. Publishing Images (Optional): Docker Hub / GHCR
+## 13. Publishing Images (Optional)
 
-In courses, publishing is optional but useful when:
-- students do not build locally
-- you want faster startup
-- you want consistent artifacts
+In most course scenarios students build images locally. But if you want to distribute a pre-built image so students do not need to build it themselves, you can publish it to a registry.
 
-Workflow:
-1) build image
-2) tag it with a registry name
-3) push
+The workflow is:
 
-Example:
 ```bash
-docker tag ingestion-api:dev ghcr.io/<org>/ingestion-api:0.1.0
-docker push ghcr.io/<org>/ingestion-api:0.1.0
+# Tag with a registry path
+docker tag my-api:dev ghcr.io/<your-org>/my-api:0.1.0
+
+# Push to the registry
+docker push ghcr.io/<your-org>/my-api:0.1.0
 ```
 
----
+Students can then use the published image in their `docker-compose.yml` by replacing the `build:` section with `image: ghcr.io/<your-org>/my-api:0.1.0`.
 
-# 14. Hardening Checklist (Real-World Best Practices)
-
-If you want to teach “production-grade thinking”, here is a checklist.
-
-## 14.1 Pin versions
-- pin Python deps (`requirements.txt`)
-- prefer pinned base images (avoid `:latest` for critical infra)
-
-## 14.2 Run as non-root (where reasonable)
-In many base images you can:
-- create a user
-- switch to it with `USER`
-
-## 14.3 Keep secrets out of images
-- don’t bake `.env` into images
-- don’t `COPY . .` if it includes secrets
-- use `.dockerignore`
-
-## 14.4 Scan images (optional)
-- `docker scout quickview`
-- Trivy
-- registry scanning
+GitHub Container Registry (GHCR) is free for public repositories and integrates well with GitHub Actions for automated builds.
 
 ---
 
-## Closing note
-Being able to *build* and *debug* images is a core professional skill.
+## 14. Hardening Checklist
 
-In a Qdrant RAG system, the fastest way to become competent is to:
-- know what each container is responsible for
-- know what dependencies it expects
-- know how to trace failures layer-by-layer
+Once you have a working image, these practices move it closer to production quality.
+
+**Pin your dependencies.** Unpinned dependencies (`fastapi` instead of `fastapi==0.110.0`) can silently break when a new version is released. Pin everything in `requirements.txt`.
+
+**Pin your base image.** `python:3.11-slim` will change over time as Debian releases security patches. For reproducibility, pin to a specific digest or use a dated tag.
+
+**Run as a non-root user.** By default, processes inside containers run as root. This is a security risk if the container is ever compromised. Create a non-root user and switch to it:
+
+```dockerfile
+RUN useradd --no-create-home --shell /bin/false appuser
+USER appuser
+```
+
+Not every service in this repo does this, but it is the right habit to build.
+
+**Keep secrets out of images.** Never `COPY .env` into an image. Never `ENV API_KEY=mysecret` in a Dockerfile. Always inject secrets at runtime via `docker-compose.yml` environment variables reading from `.env`.
+
+**Scan your images.** Tools like Docker Scout and Trivy check your image for known vulnerabilities in installed packages. Run them before publishing:
+
+```bash
+docker scout quickview my-api:dev
+```
+
+**Use `.dockerignore`.** Always. It prevents sensitive files, large data directories, and unnecessary files from being included in the build context.
