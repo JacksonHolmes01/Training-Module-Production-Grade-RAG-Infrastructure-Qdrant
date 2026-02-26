@@ -140,144 +140,161 @@ You should get back a list of results with real text from your OWASP documents. 
 
 ## 4) Optional: Connect Memory to Your `/chat` Endpoint
 
-Once `/memory/query` is working, you can go one step further and connect it to your `/chat` endpoint. This means that when a user sends a message, your app will automatically look up relevant security knowledge and include it in the prompt — so the AI's answer is grounded in real standards rather than just its training data.
+Once `/memory/query` is working, you can connect it to your existing `/chat` endpoint so that security questions are automatically answered using your curated standards rather than just the model's training data.
 
-**The idea:** before sending the user's message to the AI, make a quick separate call to Ollama asking "is this question security-related?" If the answer is yes, fetch memory and inject it into the prompt. If not, skip it and answer normally.
+**The idea:** before the prompt is built, check whether the question is security-related. If it is, fetch relevant chunks from memory and inject them into the prompt as additional context. If not, the chat works exactly as before.
 
-This is smarter than checking for specific keywords (like "owasp" or "cis") because it understands intent. Someone asking *"is this config safe?"* or *"how do I lock down my container?"* will correctly trigger a memory lookup even though they didn't use any technical terms.
+Your chat flow in `main.py` goes through `_chat_impl`, which calls `retrieve_sources`, then `build_prompt`, then `ollama_generate`. You don't need to rebuild any of that — you just need to fetch memory chunks before `build_prompt` is called and pass them in as extra context. Everything else stays the same.
 
 ---
 
-**Step 1 — Create a function that asks Ollama whether the question is security-related**
+**Step 1 — Add the security classifier function**
 
-Open `ingestion-api/app/main.py` in VS Code. At the very top of the file you'll see a block of `import` lines — add `import httpx` here if it isn't already there.
-
-Then scroll down until you find the line that starts your chat route — it will look like `@app.post("/chat")`. Place the following function **directly above that line**, with one blank line separating them:
+Open `ingestion-api/app/main.py`. Scroll to the line that reads `# Core chat implementation` and place this function directly above it:
 
 ```python
-import httpx
-
 async def is_security_related(message: str) -> bool:
     """
-    Asks Ollama to classify whether the user's message is security-related.
+    Asks Ollama to classify whether the message is security-related.
     Returns True if yes, False if no.
     """
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            "http://ollama:11434/api/chat",
-            json={
-                "model": "llama3",  # use whichever model you have pulled
-                "stream": False,
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are a classifier. Your only job is to decide if a message "
-                            "is related to cybersecurity, infrastructure security, secure coding, "
-                            "or security frameworks (OWASP, CIS, NIST, MITRE, etc.). "
-                            "Reply with only the word YES or NO. No explanation."
-                        )
-                    },
-                    {
-                        "role": "user",
-                        "content": message
-                    }
-                ]
-            },
-            timeout=10.0  # don't wait forever if Ollama is slow
-        )
-        result = response.json()
-
-    # Pull out the model's reply and check if it said YES
-    answer = result["message"]["content"].strip().upper()
-    return answer.startswith("YES")
+    prompt = (
+        "Your only job is to decide if the following message is related to "
+        "cybersecurity, infrastructure security, secure coding, or security frameworks "
+        "(OWASP, CIS, NIST, MITRE, etc.).\n"
+        "Reply with only the word YES or NO. No explanation.\n\n"
+        f"Message: {message}"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.post(
+                f"{OLLAMA_BASE_URL}/api/generate",
+                json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False}
+            )
+            r.raise_for_status()
+            answer = (r.json().get("response") or "").strip().upper()
+            return answer.startswith("YES")
+    except Exception:
+        # If the classifier fails for any reason, default to False
+        # so the chat still works normally
+        return False
 ```
 
 Breaking this down:
-- We're making a second, separate call to Ollama — not to answer the question, just to classify it. This is sometimes called a **routing call**.
-- The `system` message tells Ollama to act as a classifier and reply only with YES or NO. Keeping the instruction strict prevents it from replying with things like "Yes, this appears to be..." which would break our check.
-- `answer.startswith("YES")` is defensive — even if the model adds a stray character, it'll still work.
-- `timeout=10.0` prevents the app from hanging if Ollama takes too long to respond.
 
-> **⚠️ Verify this:** The response shape `result["message"]["content"]` is correct for Ollama's `/api/chat` endpoint, but it can vary slightly depending on which version of Ollama you're running. If this function throws a `KeyError`, print out `result` to see the actual shape your Ollama returns and adjust the key path accordingly. (Use a LLM tool to troubleshoot and debug if you recieve this error)
+- This uses the same `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, and `/api/generate` endpoint that your existing `ollama_generate` function already uses, so the response shape is guaranteed to match.
+- The `try/except` block means if Ollama is slow or unavailable, the function returns `False` and the chat continues normally rather than throwing an error.
+- `answer.startswith("YES")` is defensive — even if the model adds a stray word, it will still work correctly.
 
 ---
 
-**Step 2 — Create a helper function that fetches memory context**
+**Step 2 — Add the memory fetch function**
 
-Immediately below the `is_security_related` function you just added (still above `@app.post("/chat")`), paste this second function:
+Directly below `is_security_related`, add this second function:
 
 ```python
 async def get_memory_context(query: str, top_k: int = 4) -> str:
     """
-    Calls /memory/query with the user's message and returns the results
-    as a single formatted string ready to drop into a prompt.
+    Calls /memory/query and returns the retrieved chunks as a
+    formatted string ready to inject into a prompt.
     """
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            "http://localhost:8000/memory/query",
-            json={"query": query, "top_k": top_k}
-        )
-        data = response.json()
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.post(
+                "http://localhost:8000/memory/query",
+                json={"query": query, "top_k": top_k}
+            )
+            r.raise_for_status()
+            data = r.json()
 
-    # If no results came back, return an empty string (nothing to inject)
-    if not data.get("results"):
+        if not data.get("results"):
+            return ""
+
+        chunks = []
+        for result in data["results"]:
+            chunks.append(f"[{result['title']} | {result['source']}]\n{result['text']}")
+        return "\n\n".join(chunks)
+
+    except Exception:
+        # If memory fetch fails, return empty string so chat still works
         return ""
-
-    # Format each result as a labelled block so the AI knows where it came from
-    chunks = []
-    for r in data["results"]:
-        chunks.append(f"[{r['title']} | {r['source']}]\n{r['text']}")
-
-    # Join all blocks with a blank line between each
-    return "\n\n".join(chunks)
 ```
 
-- `top_k: int = 4` means "fetch 4 chunks by default" — increase this if you want more context, decrease it if responses feel noisy.
-
-> **⚠️ Verify this:** The URL `http://localhost:8000/memory/query` assumes both functions are running inside the same `ingestion-api` container, where `localhost` correctly refers to itself. If you ever move this logic to a different container or service, you'd need to change `localhost` to the Docker service name instead (e.g., `http://ingestion-api:8000/memory/query`). If you're getting connection errors, this is the first thing to check. (Use a LLM tool to troubleshoot and debug if you recieve this error)
-
+- `top_k: int = 4` means fetch 4 chunks by default — increase this if you want more context, decrease it if responses feel noisy.
+- Like the classifier, this has a `try/except` so a memory failure never breaks the chat endpoint.
 - The `for` loop labels each chunk with its title and source (e.g., `[CIS Docker Benchmark | docker-security]`) so the AI can cite where information came from.
+
+> **Note:** `http://localhost:8000/memory/query` works here because both functions live inside the same `ingestion-api` container, where `localhost` refers to itself. This is an internal call that never goes through NGINX, so no API key is needed.
 
 ---
 
-**Step 3 — Wire both helpers into your chat route**
+**Step 3 — Update `_chat_impl` to use both functions**
 
-Now scroll down to your existing `@app.post("/chat")` route. You're not replacing the whole function — just adding three things inside it at the top, before the line that calls Ollama. Your updated route should look like this:
+Find the `_chat_impl` function. It currently starts like this:
 
 ```python
-@app.post("/chat")
-async def chat(request: ChatRequest):
-    # Ask Ollama: is this a security question?
-    if await is_security_related(request.message):
-        memory_context = await get_memory_context(request.message)
+async def _chat_impl(
+    message: str,
+    rid: str,
+    detail_level: Optional[Literal["basic", "standard", "advanced"]] = None,
+):
+    t0 = time.time()
+
+    # 1) Retrieve
+    t_retr0 = time.time()
+    sources = await asyncio.wait_for(retrieve_sources(message), timeout=RETRIEVE_TIMEOUT_S)
+```
+
+Add the security check right at the top before the retrieve step, so it looks like this:
+
+```python
+async def _chat_impl(
+    message: str,
+    rid: str,
+    detail_level: Optional[Literal["basic", "standard", "advanced"]] = None,
+):
+    t0 = time.time()
+
+    # 0) Security memory injection (optional enhancement)
+    if await is_security_related(message):
+        memory_context = await get_memory_context(message)
     else:
         memory_context = ""
 
-    if memory_context:
-        # Inject the retrieved chunks as background context for the AI
-        system_prompt = (
-            "You are a security-aware assistant. "
-            "Use the reference material below to ground your answer:\n\n"
-            + memory_context
-        )
-    else:
-        # No security context needed — answer normally
-        system_prompt = "You are a helpful assistant."
-
-    # Pass system_prompt + request.message to Ollama as usual
-    ...
+    # 1) Retrieve
+    t_retr0 = time.time()
+    sources = await asyncio.wait_for(retrieve_sources(message), timeout=RETRIEVE_TIMEOUT_S)
 ```
 
-The `system_prompt` is the instruction you give the AI at the start of every conversation — it sets the tone and provides background context. By injecting memory chunks here, you're essentially saying "here's some relevant reference material, now answer the user's question using it."
+Then find the `build_prompt` call a few lines down:
 
-If the routing call decides the question isn't security-related, `memory_context` stays empty and the chat behaves exactly as it did before — no disruption to non-security questions.
+```python
+    prompt = await asyncio.wait_for(
+        asyncio.to_thread(build_prompt, message, sources, detail_level),
+        timeout=PROMPT_TIMEOUT_S,
+    )
+```
+
+Replace it with this:
+
+```python
+    enriched_message = (
+        f"Security reference material:\n{memory_context}\n\nQuestion: {message}"
+        if memory_context else message
+    )
+    prompt = await asyncio.wait_for(
+        asyncio.to_thread(build_prompt, enriched_message, sources, detail_level),
+        timeout=PROMPT_TIMEOUT_S,
+    )
+```
+
+This prepends the memory chunks to the message before it reaches `build_prompt`. The rest of `_chat_impl` — the Ollama call, the timing, and the response shape — stays completely unchanged.
 
 ---
 
 ## 5) Security Note: Keep These Endpoints Behind the API Key Gate
 
-The memory endpoints are valuable — they contain curated security reference material that took effort to assemble. Even though the documents themselves aren't secrets, in a real organization this kind of governance material would be access-controlled.
+The memory endpoints contain curated security reference material that took effort to assemble. Even though the documents themselves aren't secrets, in a real organization this kind of governance material would be access-controlled.
 
 This repo already enforces authentication via an API key header checked by NGINX. Make sure your memory endpoints follow the same rules:
 
