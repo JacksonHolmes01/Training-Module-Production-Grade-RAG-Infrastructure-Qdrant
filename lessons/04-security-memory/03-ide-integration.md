@@ -20,6 +20,11 @@ By the end of this lesson, you will:
 - Know how to keep your memory up to date as standards evolve
 - Understand what "major integration" means in the context of this project
 
+## Important Note regarding Lesson 4.2
+You may be wondering where the chatbot you built in this lab fits in. In this lesson, the AI doing the review is Copilot or Cursor through your chosen IDE, not your chatbot. However, your contribution is the retrieval layer -- the `/memory/query` endpoint you built in Lesson 4.2 is what fetches the security chunks. Without that, you would just be asking Copilot generic security questions with no grounded references. Think of it as a division of labour: your API finds the right standards, and the IDE AI uses them to review the code.
+
+If you completed the optional section in Lesson 4.2, your own chatbot can take over the entire workflow. Instead of manually running a curl command and pasting chunks into Copilot, you would just open your chatbot's chat interface at `http://localhost:8088/chat` (only exists if completed the optional section in 4.2) and ask it to review the file directly. Behind the scenes, your `/chat` endpoint would automatically detect that the question is security-related, call `/memory/query` to fetch the relevant chunks, inject them into the prompt, and send everything to Ollama to generate a grounded response. The end result is the same, a security review backed by real standards, but your chatbot is handling every step rather than you doing it manually. This is the more production-ready version of the workflow and is what a real security tool would look like in practice.
+
 ---
 
 ## 1) What Does "Grounded" Mean and Why Does It Matter?
@@ -89,7 +94,22 @@ This is the workflow you will use throughout this lesson. It has two steps: retr
 
 ### Step 1, Retrieve Security Context from Memory
 
-Open the integrated terminal in your IDE. In both VS Code and Cursor, you can open it with `Ctrl+`` ` (backtick) or by going to **Terminal > New Terminal** in the menu. Make sure you are in the repo root folder.
+Open the integrated terminal in your IDE. In both VS Code and Cursor, you can open it with `Ctrl+`` ` (backtick) or by going to **Terminal > New Terminal** in the menu. 
+
+Before running any commands, make sure you are in the repo root folder. The repo root is the top-level folder of the project, the one that contains files like `docker-compose.yml` and `.env`. If you opened the project correctly in your IDE (`File > Open Folder` and selected the repo folder), your terminal will already start there. You can confirm by running:
+
+```bash
+pwd
+```
+
+The output should end with your repo folder name. If it does not, navigate there with:
+
+```bash
+cd /path/to/your/repo
+```
+
+Replace `/path/to/your/repo` with the actual path where you cloned the project. If you are not sure where that is, right-click the repo folder in your IDE file explorer and look for "Copy Path" or "Reveal in Finder/Explorer" to find it.
+
 
 First, load your API key:
 
@@ -114,6 +134,8 @@ Breaking this down:
 
 The `query` field is a natural language description of what you are looking for. Be specific: mention the kinds of issues you are concerned about (secrets, exposed ports, privileged containers, etc.). The more specific your query, the more relevant the chunks you will get back.
 
+*Since this is a query related to docker-compose the query relates to docker concepts. If you want different information, use a different query*
+
 `tags` narrows the search to specific frameworks. `"docker"` and `"cis"` will limit results to your Docker and CIS Benchmark documents. Leave `tags` out entirely if you want to search across everything.
 
 `top_k: 8` means return the 8 most relevant chunks. For a thorough review, 6 to 10 is a good range.
@@ -128,12 +150,13 @@ cat /tmp/security_context.json | python -m json.tool
 
 Look at the `text` fields in each result, these are the actual security reference chunks your AI will use. If they look irrelevant, adjust your `query` to be more specific and run it again.
 
-### Step 2, Use the Context in Your IDE Chat
+### Step 2 -- Use the Context in Your IDE Chat
 
-Open the file you want to review in your IDE (e.g., `docker-compose.yml`). Then open the AI chat panel using the steps from Section 2.
+First, open the file you want to review. In VS Code or Cursor, look at the file explorer panel on the left side of the screen. Find `docker-compose.yml` in the list and click it once. It will open in the editor in the center of the screen.
 
-Paste the following into the chat, then immediately follow it with the chunk texts you retrieved (copy the `text` values from `security_context.json`, or attach the file in Cursor using `@`):
+Next, open the AI chat panel. If you are in VS Code, press `Ctrl+Alt+I` (Windows/Linux) or `Cmd+Option+I` (Mac). If you are in Cursor, press `Ctrl+L` (Windows/Linux) or `Cmd+L` (Mac). The chat panel will appear on the right side of your screen with a text box at the bottom where you type.
 
+Now you need to give the AI two things in one message: the security reference chunks you retrieved, and the file you want reviewed. In the chat text box, paste this prompt first:
 ```
 I am going to give you a set of security reference chunks retrieved from a vector database of security standards. After the references, I will share a file for you to review.
 
@@ -141,14 +164,36 @@ Your job:
 - Identify security issues in the file
 - For each issue, cite which reference it comes from
 - Propose a minimal fix that keeps the lab functional
-- If a finding is not supported by the references provided, say so explicitly, do not invent citations
+- If a finding is not supported by the references provided, say so explicitly -- do not invent citations
 
 References:
-[paste your retrieved chunks here, or attach security_context.json]
+[paste your retrieved chunks here]
 
 File to review:
-[paste the contents of docker-compose.yml, or use @docker-compose.yml in Cursor]
+[paste the contents of docker-compose.yml here]
 ```
+
+To get the chunk text, go back to your terminal and run:
+```bash
+cat /tmp/security_context.json | python -m json.tool
+```
+
+To get chunk text related to the query without associated scores and other information run:
+```bash
+cat /tmp/security_context.json | python -m json.tool | python3 -c "
+import json, sys
+data = json.load(open('/tmp/security_context.json'))
+for r in data['results']:
+    print(r['text'])
+    print('---')
+"
+```
+
+In the output, find each result block and copy the text inside the `"text": "..."` field. Paste all of those text values one after another where it says `[paste your retrieved chunks here]`.
+
+Then open `docker-compose.yml` in the editor, select all the text with `Ctrl+A` (Windows/Linux) or `Cmd+A` (Mac), copy it, and paste it where it says `[paste the contents of docker-compose.yml here]`.
+
+Once you have both in the chat, hit enter and the AI will review the file against the security references.
 
 **Why "say so explicitly: do not invent citations"?** Without this instruction the AI will happily cite frameworks it was not given, or make up section numbers. Explicitly telling it to flag unsupported claims forces honesty and helps you separate grounded findings from general suggestions.
 
