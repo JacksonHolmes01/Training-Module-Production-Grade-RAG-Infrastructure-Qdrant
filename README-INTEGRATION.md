@@ -119,8 +119,13 @@ Students will:
 -   Propose minimal diffs that preserve lab functionality
 
 ------------------------------------------------------------------------
+## Now go to the additional lessons!
 
-# Activation Steps
+[Lesson 1](https://github.com/JacksonHolmes01/Training-Module-Production-Grade-RAG-Infrastructure-Qdrant/blob/main/lessons/04-security-memory/01-building-security-memory.md)
+
+
+# Activation Steps (If you understand these concepts already)
+*Warning: Skipping the lessons will prevent your chatbot from having /chat functionality!*
 
 4)  Rebuild ingestion API:
 
@@ -144,7 +149,7 @@ curl -sS -X POST http://localhost:8088/memory/query   -H "Content-Type: applicat
 
 ------------------------------------------------------------------------
 
-## Optional Gradio UI fix (recommended)
+## Optional Gradio UI fix 
 
 If your UI crashed with: -
 `ValueError: could not convert string to float: ''` -
@@ -158,6 +163,3 @@ Then rebuild UI:
 docker compose up -d --build gradio-ui
 ```
 
-## Now go to the additional lessons!
-
-[Lesson 1](https://github.com/JacksonHolmes01/Training-Module-Production-Grade-RAG-Infrastructure-Qdrant/blob/main/lessons/04-security-memory/01-building-security-memory.md)
