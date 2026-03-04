@@ -305,6 +305,41 @@ If you're unsure whether your endpoints are protected, re-read the NGINX config 
 
 ---
 
+## Rebuild ingestion_api
+
+```bash
+docker compose up -d --build ingestion-api
+docker cp patches/ingestion-api/app/security_memory ingestion-api:/app/app/security_memory
+docker compose restart ingestion-api
+```
+
+## Test the Chat Endpoint
+
+```bash
+curl -s -X POST http://localhost:8088/chat \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $EDGE_API_KEY" \
+  -d '{"message": "What are the CIS Docker benchmark recommendations for running containers as root?"}' \
+  | python -m json.tool
+```
+
+## If Chat Times Out
+
+Add this to your `.env` file:
+
+```
+CHAT_TOTAL_TIMEOUT_S=300
+OLLAMA_TIMEOUT_S=240
+```
+
+Then restart:
+
+```bash
+docker compose restart ingestion-api
+```
+
+You can also test via the Gradio UI at `http://localhost:7860` — it uses the `/chat` endpoint under the hood and handles the API key automatically.
+
 ## Checkpoint
 You're done when all of the following are true:
 
