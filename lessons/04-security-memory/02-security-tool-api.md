@@ -292,7 +292,206 @@ This prepends the memory chunks to the message before it reaches `build_prompt`.
 
 ---
 
-## 5) Security Note: Keep These Endpoints Behind the API Key Gate
+**5) — Add follow-up question suggestions (optional)**
+
+This step adds a second Ollama call after the answer is generated. It looks at the question and answer and suggests 2-3 relevant follow-up questions the user might want to ask next. These are returned alongside the answer and displayed as clickable buttons in the Gradio UI.
+
+Add this function directly below `get_memory_context`:
+
+```python
+async def get_followup_suggestions(message: str, answer: str) -> list:
+    """
+    Asks Ollama to suggest 2-3 follow-up questions based on the question and answer.
+    Returns a list of question strings, or an empty list if it fails.
+    """
+    prompt = (
+        "Based on this question and answer, suggest 2-3 short follow-up questions "
+        "the user might want to ask next. Return only the questions as a JSON array "
+        "of strings with no extra text, no explanation, and no markdown.\n\n"
+        f"Question: {message}\n\nAnswer: {answer}"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.post(
+                f"{OLLAMA_BASE_URL}/api/generate",
+                json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False}
+            )
+            r.raise_for_status()
+            response = (r.json().get("response") or "").strip()
+            return json.loads(response)
+    except Exception:
+        return []
+```
+
+Make sure `import json` is at the top of `main.py` with the other imports, and that `OLLAMA_BASE_URL` and `OLLAMA_MODEL` are defined in the config section:
+
+```python
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434").rstrip("/")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
+```
+
+Then update `_chat_impl` to call it after the answer is generated. Find the return block at the bottom of `_chat_impl`:
+
+```python
+    return {
+        "answer": answer,
+        "sources": sources,
+        "_timing_ms": { ... },
+        "_prompt_chars": len(prompt),
+    }
+```
+
+Replace it with:
+
+```python
+    # 4) Follow-up suggestions
+    followups = await get_followup_suggestions(message, answer)
+
+    return {
+        "answer": answer,
+        "sources": sources,
+        "followups": followups,
+        "_timing_ms": {
+            "retrieve": round(t_retr, 1),
+            "prompt": round(t_pr, 1),
+            "generate": round(t_llm, 1),
+            "total": round(total, 1),
+        },
+        "_prompt_chars": len(prompt),
+    }
+```
+
+Also update the `/chat` endpoint to pass `followups` through to the response. Find:
+
+```python
+        return {"answer": result["answer"], "sources": result["sources"]}
+```
+
+Replace with:
+
+```python
+        return {
+            "answer": result["answer"],
+            "sources": result["sources"],
+            "followups": result.get("followups", []),
+        }
+```
+
+Once this is in place, the `/chat` response will include a `followups` field — a list of suggested questions. The Gradio UI update in Lesson 4.3 will display these as clickable buttons.
+
+---
+
+**6) — Restrict the assistant to security topics only (optional)**
+
+By default the chatbot answers any question — security questions get memory injection, everything else goes through the normal RAG pipeline. This step adds a hard restriction so non-security questions receive a polite redirect instead of an answer.
+
+This turns the general RAG assistant into a focused security tool. It is a good example of how you scope an AI assistant to a specific domain in production.
+
+Add this function directly below `is_security_related`:
+
+```python
+async def enforce_security_scope(message: str) -> str | None:
+    """
+    If the message is not security-related, return a redirect message.
+    If it is security-related, return None so the chat continues normally.
+    """
+    is_security = await is_security_related(message)
+    if not is_security:
+        return (
+            "This assistant is focused on cybersecurity topics including secure coding, "
+            "infrastructure security, and frameworks such as NIST, CIS, OWASP, and MITRE. "
+            "Your question doesn't appear to be security-related. Please ask a cybersecurity "
+            "question and I'll do my best to help."
+        )
+    return None
+```
+
+Then update `_chat_impl` to call it at the very top, before anything else runs. Find the start of `_chat_impl`:
+
+```python
+async def _chat_impl(
+    message: str,
+    rid: str,
+    detail_level: Optional[Literal["basic", "standard", "advanced"]] = None,
+):
+    t0 = time.time()
+
+    # 0) Security memory injection
+    if await is_security_related(message):
+```
+
+Replace the security memory injection block with this:
+
+```python
+async def _chat_impl(
+    message: str,
+    rid: str,
+    detail_level: Optional[Literal["basic", "standard", "advanced"]] = None,
+):
+    t0 = time.time()
+
+    # 0) Scope enforcement — redirect non-security questions
+    redirect = await enforce_security_scope(message)
+    if redirect:
+        return {
+            "answer": redirect,
+            "sources": [],
+            "followups": [],
+            "_timing_ms": {"retrieve": 0, "prompt": 0, "generate": 0, "total": 0},
+            "_prompt_chars": 0,
+        }
+
+    # 1) Security memory injection
+    memory_context = await get_memory_context(message)
+```
+
+Notice that because `enforce_security_scope` already calls `is_security_related` internally, you no longer need the separate `if await is_security_related` check — if execution reaches step 1, the message is already confirmed as security-related so you can call `get_memory_context` directly.
+
+### Testing it
+
+Rebuild and restart after making the change:
+
+```bash
+docker compose up -d --build ingestion-api
+docker cp patches/ingestion-api/app/security_memory ingestion-api:/app/app/security_memory
+docker compose restart ingestion-api
+```
+
+Test with a non-security question:
+
+```bash
+curl -s -X POST http://localhost:8088/chat \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $EDGE_API_KEY" \
+  -d '{"message": "What is the capital of France?"}' \
+  | python -m json.tool
+```
+
+Expected response:
+
+```json
+{
+  "answer": "This assistant is focused on cybersecurity topics...",
+  "sources": [],
+  "followups": []
+}
+```
+
+Test with a security question to confirm it still works normally:
+
+```bash
+curl -s -X POST http://localhost:8088/chat \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $EDGE_API_KEY" \
+  -d '{"message": "What does OWASP say about broken access control?"}' \
+  | python -m json.tool
+```
+
+> **Note:** This step reuses the same Ollama classifier from Step 1, so there is no additional model or service required. The only trade-off is one extra Ollama round trip per message to run the classification — on a small model like `llama3.2:1b` this adds roughly 5-10 seconds per request.
+
+---
+
+## 7) Security Note: Keep These Endpoints Behind the API Key Gate
 
 The memory endpoints contain curated security reference material that took effort to assemble. Even though the documents themselves aren't secrets, in a real organization this kind of governance material would be access-controlled.
 
