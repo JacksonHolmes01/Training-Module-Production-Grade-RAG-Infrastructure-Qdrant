@@ -25,6 +25,12 @@ To listen or download a podcast episode:
 
 ---
 
+## Quiz
+
+| File | Description |
+|---|---|
+| [Qdrant-Lesson-Quiz.md](https://github.com/JacksonHolmes01/Training-Module-Production-Grade-RAG-Infrastructure-Qdrant/blob/e1a17813c841fba503107bcf30ae5c7dce46da14/Student-Resources/Qdrant-Lesson-Quiz.md) | Quiz covering the full lab |
+
 ## Overview
 
 | File | Description |
