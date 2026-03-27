@@ -224,3 +224,6 @@ If the UI loads but chat fails, that is normal before you pull an Ollama model (
 - You can open `http://localhost:7860` and see the Gradio UI.
 
 [Lesson 3](https://github.com/JacksonHolmes01/Training-Module-Production-Grade-RAG-Infrastructure-Qdrant/blob/main/lessons/03-compose-architecture-and-resource-limits.md)
+
+---
+*License: [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) — Jackson Holmes*
