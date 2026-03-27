@@ -606,3 +606,6 @@ You are done when you can:
 - Use the prompt library to produce a grounded security review in your IDE
 - Implement at least one fix and confirm the lab still runs correctly after the change
 
+
+---
+*License: [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) — Jackson Holmes*
