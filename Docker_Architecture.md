@@ -387,3 +387,7 @@ If retrieval returns results, the full pipeline is working. If it returns empty 
 ## Closing Note
 
 The architecture in this repo is not Docker for its own sake. It exists to give you a realistic, debuggable system where each layer has a clear responsibility and a clear interface. Once you can trace a request end-to-end and reason about which layer is responsible for which failure, you have the mental model needed to modify the system safely and confidently.
+
+
+---
+*License: [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) — Jackson Holmes*
