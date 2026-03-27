@@ -131,8 +131,5 @@ At the end of this Lab, you should be able to:
 [Lesson 2](https://github.com/JacksonHolmes01/Training-Module-Production-Grade-RAG-Infrastructure-Qdrant/blob/main/lessons/02-prereqs-and-setup.md)
 
 
-<!--
-License: Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)
-Author: Jackson Holmes
-https://creativecommons.org/licenses/by-sa/4.0/
--->
+---
+*License: [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) — Jackson Holmes*
