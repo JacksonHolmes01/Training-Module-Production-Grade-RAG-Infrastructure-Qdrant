@@ -236,3 +236,6 @@ This lab is designed not just to teach how to run a RAG system, but how to reaso
 Expand the capabilities of your chatbot and it's cybersecurity functionality below:
 
 [Part 2 and Lab Extension](https://github.com/JacksonHolmes01/Training-Module-Production-Grade-RAG-Infrastructure-Qdrant/blob/main/README-INTEGRATION.md)
+
+---
+*License: [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) — Jackson Holmes*
