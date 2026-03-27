@@ -303,3 +303,6 @@ In production systems:
 ------------------------------------------------------------------------
 
 [Lesson 6](https://github.com/JacksonHolmes01/Training-Module-Production-Grade-RAG-Infrastructure-Qdrant/blob/main/lessons/06-ingestion-api-validation-and-ingest.md)
+
+---
+*License: [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) — Jackson Holmes*
