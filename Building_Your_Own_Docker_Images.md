@@ -449,3 +449,7 @@ docker scout quickview my-api:dev
 ```
 
 **Use `.dockerignore`.** Always. It prevents sensitive files, large data directories, and unnecessary files from being included in the build context.
+
+
+---
+*License: [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) — Jackson Holmes*
