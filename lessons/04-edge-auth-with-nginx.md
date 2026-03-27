@@ -146,3 +146,7 @@ That function checks the same header.
 - You can explain why having both NGINX auth and API auth is stronger than only one.
 
 [Lesson 5](https://github.com/JacksonHolmes01/Training-Module-Production-Grade-RAG-Infrastructure-Qdrant/blob/main/lessons/05-weaviate-schema-and-vectorization.md))
+
+
+---
+*License: [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) — Jackson Holmes*
