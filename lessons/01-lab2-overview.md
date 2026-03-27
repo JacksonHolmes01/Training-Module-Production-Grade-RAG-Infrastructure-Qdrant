@@ -129,3 +129,10 @@ At the end of this Lab, you should be able to:
 - You can draw the RAG flow: UI → NGINX → API → (Qdrant retrieval) → (Ollama generation) → UI.
 
 [Lesson 2](https://github.com/JacksonHolmes01/Training-Module-Production-Grade-RAG-Infrastructure-Qdrant/blob/main/lessons/02-prereqs-and-setup.md)
+
+
+<!--
+License: Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)
+Author: Jackson Holmes
+https://creativecommons.org/licenses/by-sa/4.0/
+-->
