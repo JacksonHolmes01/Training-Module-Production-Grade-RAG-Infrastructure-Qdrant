@@ -547,3 +547,7 @@ You're done when all of the following are true:
 - The base lab still works (chat, ingest, and retrieval are unaffected)
 
 [Lesson 3](https://github.com/JacksonHolmes01/Training-Module-Production-Grade-RAG-Infrastructure-Qdrant/blob/main/lessons/04-security-memory/03-ide-integration.md)
+
+
+---
+*License: [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) — Jackson Holmes*
