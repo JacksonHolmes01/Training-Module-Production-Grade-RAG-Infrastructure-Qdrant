@@ -102,7 +102,7 @@ with gr.Blocks(title="Lab 2 — Chat with Qdrant (RAG)") as demo:
 
     with gr.Row():
         with gr.Column(scale=2):
-            gr.ChatInterface(chat_fn)
+            gr.ChatInterface(chat_fn, type="messages")
         with gr.Column(scale=1):
             gr.Markdown("## System status")
             btn = gr.Button("Refresh health")
