@@ -1,7 +1,7 @@
-# Lab 1 — Production-Grade RAG Infrastructure
+# Lab 2 — Production-Grade RAG Infrastructure
 
 
-- **Lab 1 (this repository):** Build a multi-service Retrieval-Augmented Generation (RAG) chatbot using Qdrant, Ollama, FastAPI, NGINX, and Gradio.
+- **Lab 2 (this repository):** Build a multi-service Retrieval-Augmented Generation (RAG) chatbot using Qdrant, Ollama, FastAPI, NGINX, and Gradio.
 
 You will not just run a chatbot, you will understand how it is built, secured, and operated.
 
@@ -75,21 +75,17 @@ In this lab, Qdrant is internal-only. It is never exposed directly to the host m
 
 ---
 
-## text2vec-transformers — Embedding Service
+## Embeddings — Generated Inside FastAPI
 
-Qdrant does not generate embeddings by itself in this lab.
+Qdrant does not generate embeddings by itself. It only stores and searches vectors.
 
-Instead, it calls a separate service:
+In this lab, embeddings are created inside the FastAPI service (`ingestion-api/app/embeddings.py`) using the `sentence-transformers` library. The default model is `sentence-transformers/all-MiniLM-L6-v2`, which you can change with the `EMBEDDINGS_MODEL_ID` environment variable. There is no separate embedding container.
 
-- `text2vec-transformers`
-
-This service converts text into vector embeddings using a sentence-transformer model.
-
-This separation teaches an important production concept:
+This teaches an important production concept:
 
 - The database stores vectors.
-- A model service generates vectors.
-- The two communicate over a defined API boundary.
+- The application layer generates vectors before writing to or querying the database.
+- The vector dimension in Qdrant must match the embedding model's output.
 
 ---
 

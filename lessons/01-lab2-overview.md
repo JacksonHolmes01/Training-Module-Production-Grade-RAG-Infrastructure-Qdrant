@@ -1,4 +1,4 @@
-# Lesson 1 — Lab 1 Overview: From Secure DB to a Real RAG App
+# Lesson 1 — Lab 2 Overview: From Secure DB to a Real RAG App
 
 ## Learning objectives
 
