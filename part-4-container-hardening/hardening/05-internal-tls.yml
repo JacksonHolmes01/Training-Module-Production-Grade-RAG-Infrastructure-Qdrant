@@ -1,0 +1,36 @@
+# Layer 5: encrypt and verify traffic between the API and Qdrant (Lesson 9).
+# Qdrant serves HTTPS with a certificate signed by the lab's own certificate
+# authority (CA). The API and qdrant-init trust ONLY that CA, so they refuse
+# any server that cannot prove it is "qdrant".
+services:
+  qdrant:
+    environment:
+      QDRANT__SERVICE__ENABLE_TLS: "true"
+      QDRANT__TLS__CERT: /run/secrets/qdrant_server_crt
+      QDRANT__TLS__KEY: /run/secrets/qdrant_server_key
+    secrets:
+      - qdrant_server_crt
+      - qdrant_server_key
+
+  qdrant-init:
+    environment:
+      QDRANT_URL: "https://qdrant:6333"
+      QDRANT_CA_CERT: /run/secrets/tls_ca_crt
+    secrets:
+      - qdrant_api_key
+      - tls_ca_crt
+
+  ingestion-api:
+    environment:
+      QDRANT_URL: "https://qdrant:6333"
+      QDRANT_CA_CERT: /run/secrets/tls_ca_crt
+    secrets:
+      - tls_ca_crt
+
+secrets:
+  qdrant_server_crt:
+    file: ./secrets/qdrant_server.crt
+  qdrant_server_key:
+    file: ./secrets/qdrant_server.key
+  tls_ca_crt:
+    file: ./secrets/tls_ca.crt

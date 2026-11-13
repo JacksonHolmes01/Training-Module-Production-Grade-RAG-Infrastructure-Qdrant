@@ -1,0 +1,54 @@
+# Layer 1: run every container as an unprivileged user (Lesson 5).
+services:
+  # The data folder was created by the root-running Qdrant in Part 3, so it
+  # belongs to root. This one-shot container hands it to Qdrant's non-root
+  # user (1000), then exits. It is the ONLY thing that runs as root, it holds
+  # exactly the capabilities it needs to change ownership, and it has no network.
+  qdrant-perms:
+    image: qdrant/qdrant:v1.20.0
+    container_name: rag-qdrant-perms
+    restart: "no"
+    user: "0:0"
+    entrypoint: ["bash", "-c", "chown -R 1000:1000 /qdrant/storage && echo 'qdrant data folder now owned by 1000'"]
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_READ_SEARCH, FOWNER]
+    security_opt: ["no-new-privileges:true"]
+    network_mode: none
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  qdrant:
+    # Qdrant's official non-root image: the same software, built to run as user 1000
+    image: qdrant/qdrant:v1.20.0-unprivileged
+    depends_on:
+      qdrant-perms:
+        condition: service_completed_successfully
+
+  qdrant-init:
+    user: "10001:10001"
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+
+  ollama:
+    user: "10001:10001"
+    environment:
+      HOME: /tmp
+      OLLAMA_MODELS: /ollama/models
+    # Models are mounted READ-ONLY: nothing in this container can replace them
+    volumes: !override
+      - ollama_data:/ollama:ro
+
+  ingestion-api:
+    user: "10001:10001"
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+
+  nginx:
+    # The official NGINX image starts as root; this variant never does
+    image: nginxinc/nginx-unprivileged:1.28.2-alpine
+
+  gradio-ui:
+    user: "10001:10001"
+    environment:
+      HOME: /tmp
+      PYTHONDONTWRITEBYTECODE: "1"
