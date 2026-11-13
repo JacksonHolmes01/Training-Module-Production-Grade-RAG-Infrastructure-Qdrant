@@ -28,9 +28,9 @@ Your numbers will be different, because new vulnerabilities are published every 
 
 ### How Trivy is run safely
 
-Many tutorials run scanners with `-v /var/run/docker.sock:/var/run/docker.sock`. That gives the scanner **full control of Docker**, which is effectively root on your computer. `bin/scan_images.sh` never does that:
-- images from a registry are scanned **by name**, so Trivy downloads them itself
-- images built here are exported to a file with `docker save`, and Trivy scans the file
+Many tutorials run scanners with `-v /var/run/docker.sock:/var/run/docker.sock`. That gives the scanner **full control of Docker**, which is effectively root on your computer. `bin/scan_images.sh` never does that. Instead, every image is exported to a file with `docker save`, and Trivy scans the file. That has two more benefits:
+- it scans **exactly** the images on your machine, the ones you actually run
+- Trivy never has to download images, so registry download limits (`TOOMANYREQUESTS`) cannot stop the scan
 
 ---
 

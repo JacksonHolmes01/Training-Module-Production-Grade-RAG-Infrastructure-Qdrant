@@ -12,11 +12,15 @@ Open `filter_output()` in `ingestion-api/app/guards.py`.
 
 ```python
 squashed = re.sub(r"[\s\-_]", "", normalize(answer))
-if re.sub(r"[\s\-_]", "", CANARY.lower()) in squashed:
+marker = re.sub(r"[\s\-_]", "", CANARY.rsplit("-", 1)[0].lower())
+if (re.sub(r"[\s\-_]", "", CANARY.lower()) in squashed
+        or re.search(marker + r"[0-9a-f]{4,}", squashed)):
     return OutputCheck("I can't share that. ...", True, ["canary-leak"])
 ```
 
 If the canary appears anywhere in the answer, the **whole answer is withheld**. The check ignores case, spaces, dashes, underscores, and invisible characters, so `internal ref 3f9a...` or `INTERNAL_REF_3F9A...` are caught too.
+
+It also catches a **partial** code. Small models sometimes copy only part of it, such as `INTERNAL-REF-6E6C9888` when the real code is longer. That is still a leak: it proves the model will repeat confidential configuration. So the marker `INTERNAL-REF` followed by four or more hex digits is treated as a leak too. Building this lab, the first version of the filter only matched the full code, and a partial leak slipped through.
 
 This works no matter **how** the attacker got the model to leak: blunt request, sneaky request, French, or a technique nobody has invented yet. It checks the result, not the method.
 

@@ -149,8 +149,12 @@ def filter_output(answer: str) -> OutputCheck:
     reasons: List[str] = []
 
     # Contains the canary in any form (case, spacing, or invisible chars changed)?
+    # Small models sometimes copy only PART of the code (INTERNAL-REF-6E6C9888).
+    # That is still a leak, so the marker followed by any hex digits counts too.
     squashed = re.sub(r"[\s\-_]", "", normalize(answer))
-    if re.sub(r"[\s\-_]", "", CANARY.lower()) in squashed:
+    marker = re.sub(r"[\s\-_]", "", CANARY.rsplit("-", 1)[0].lower())
+    if (re.sub(r"[\s\-_]", "", CANARY.lower()) in squashed
+            or re.search(marker + r"[0-9a-f]{4,}", squashed)):
         return OutputCheck(
             "I can't share that. (The response was withheld because it contained internal configuration.)",
             True,

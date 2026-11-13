@@ -6,8 +6,9 @@
 #   bin/scan_images.sh --details    also list each vulnerability
 #
 # Trivy runs in its own container. It never gets access to the Docker socket:
-# registry images are scanned by name, and images built here are exported to
-# a file first (docker save) and scanned from that file.
+# every image is exported to a file first (docker save) and scanned from that
+# file. That scans exactly the images on this machine, and Trivy never has to
+# download them (registries limit how often you can download anonymously).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -34,14 +35,19 @@ PY
 }
 
 echo "Scanning (the first run downloads Trivy's vulnerability database, about 1 minute)..."
-run_trivy qdrant    qdrant/qdrant:v1.20.0-unprivileged
-run_trivy ollama    ollama/ollama:0.40.6
-run_trivy nginx     nginxinc/nginx-unprivileged:1.28.2-alpine
+scan_local() {  # scan_local <label> <image>
+  docker image inspect "$2" >/dev/null 2>&1 || docker pull -q "$2" >/dev/null
+  docker save "$2" -o "scan-results/$1.tar"
+  run_trivy "$1" --input "/scan/$1.tar"
+  rm -f "scan-results/$1.tar"
+}
+
+scan_local qdrant    qdrant/qdrant:v1.20.0-unprivileged
+scan_local ollama    ollama/ollama:0.40.6
+scan_local nginx     nginxinc/nginx-unprivileged:1.28.2-alpine
 
 for svc in ingestion-api gradio-ui; do
   img=$(docker compose config --format json | python3 -c "import json,sys; c=json.load(sys.stdin); print(c['services']['$svc'].get('image') or c['name']+'-$svc')")
-  docker save "$img" -o "scan-results/${svc}.tar"
-  run_trivy "$svc" --input "/scan/${svc}.tar"
-  rm -f "scan-results/${svc}.tar"
+  scan_local "$svc" "$img"
 done
 echo "Full reports: scan-results/*.json"
